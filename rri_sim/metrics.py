@@ -38,6 +38,26 @@ def peak_timing_hours(times, obs, sim):
     return (ts - to) / np.timedelta64(1, "h") if hasattr(ts - to, "dtype") else (ts - to)
 
 
+def lag_hours(obs, sim, max_lag=12, dt_h=1.0):
+    """Time shift [h] maximising the correlation of sim against obs
+    (positive = simulation late).  Robust for multi-peak events."""
+    obs = np.asarray(obs, float)
+    sim = np.asarray(sim, float)
+    best, bl = -np.inf, 0
+    for L in range(-max_lag, max_lag + 1):
+        if L >= 0:
+            o, s = obs[:len(obs) - L], sim[L:]
+        else:
+            o, s = obs[-L:], sim[:L]
+        m = np.isfinite(o) & np.isfinite(s)
+        if m.sum() < 3:
+            continue
+        c = np.corrcoef(o[m], s[m])[0, 1]
+        if c > best:
+            best, bl = c, L
+    return bl * dt_h
+
+
 def volume_error(obs, sim):
     o, s = _pair(obs, sim)
     return (s.sum() - o.sum()) / o.sum()
@@ -47,7 +67,7 @@ def hydrograph_scores(times, obs, sim) -> dict:
     return {"NSE": nse(obs, sim), "KGE": kge(obs, sim), "peak_err": peak_error(obs, sim),
             "peak_obs": float(np.nanmax(obs)), "peak_sim": float(np.nanmax(sim)),
             "peak_timing_h": float(peak_timing_hours(np.asarray(times), obs, sim)),
-            "volume_err": volume_error(obs, sim)}
+            "lag_h": lag_hours(obs, sim), "volume_err": volume_error(obs, sim)}
 
 
 def flood_extent_scores(sim_wet, obs_wet, valid=None) -> dict:

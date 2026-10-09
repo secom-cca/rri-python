@@ -1,0 +1,38 @@
+# rri-sim — RRIモデルの物理式に基づく流域治水シミュレーター（Python）
+
+降雨流出・洪水氾濫を流域一体で解く RRI モデル（Sayama et al., 2012）の支配方程式を Python/Numba で再実装し、
+公開データ（国土地理院・国土交通省・気象庁・e-Stat）から実流域モデルを自動構築して、
+過去洪水の再現・検証、治水経済調査マニュアルに基づく被害額推計、治水政策の比較を行う研究用コード。
+
+## 構成
+
+```
+rri_sim/
+  kernels.py      斜面2D・河道1D・河道⇄斜面交換・Green-Ampt（Numba, 有限体積法）
+  solver.py       時間積分（適応dt, 水収支台帳, ダム操作）
+  domain.py       計算領域・河道網
+  hydro.py        窪地処理, D8, 流量累積, HAND
+  basin.py        実流域モデルの自動構築（DEM→流域界→河道網→土地利用）
+  forcing.py      降雨（区分一定・厳密積分）・流入ハイドログラフ
+  events.py       雨量観測所データの収集と格子化（IDW）
+  cases.py        対象流域・洪水イベントの登録
+  damage.py       治水経済調査マニュアル（案）R7.7 の被害率・評価単価
+  assets.py       e-Stat メッシュ統計から資産基礎数量
+  scenarios.py    浚渫・堤防嵩上げ・遊水地・土地利用変更
+  metrics.py      NSE, KGE, ピーク誤差, CSI 等
+  data/           gsi_dem, mlit_water, jma, landuse, estat（キャッシュ付き取得）
+scripts/          run_event.py, calibrate.py, damage_from_result.py, compare_schemes_levee.py
+tests/            検証テスト（解析解・V字流域・保存性・被害率）
+docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告
+```
+
+## 使い方
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest                       # 検証テスト
+.venv/bin/python scripts/run_event.py kusu_2020  # 玖珠川 2020年7月豪雨（データ自動取得）
+.venv/bin/python scripts/calibrate.py sample --event kusu_2018 --n 40
+```
+
+取得データは `data/raw/`（git管理外）にキャッシュされる。

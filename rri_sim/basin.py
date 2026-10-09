@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from .domain import Domain, build_river
-from .hydro import D8_DI, D8_DJ, d8_directions, fill_depressions, flow_accumulation
+from .hydro import (D8_DI, D8_DJ, d8_directions, fill_depressions, flow_accumulation,
+                    height_above_nearest_drainage)
 from .params import LandClassParams, ModelParams, RiverGeometryParams, NumericsParams
 
 
@@ -23,6 +24,9 @@ class BasinConfig:
     river_threshold_km2: float = 5.0
     snap_radius_m: float = 1500.0
     expected_area_km2: float | None = None
+    # "fill": slope cells use the depression-filled DEM (RRI 'adem' convention;
+    # removes spurious pits of the averaged DEM).  "none": raw averaged DEM.
+    dem_conditioning: str = "fill"
     gauges: dict = field(default_factory=dict)    # name -> (lon, lat)
 
 
@@ -118,12 +122,16 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     # the outlet cell must drain out of the domain
     fd[ro - r_a, co - c_a] = -1
     acc_ws = flow_accumulation(fd, mask, cfg.res ** 2) / 1e6
-    river = build_river(np.where(mask, z, np.nan), zf_c, mask, fd, acc_ws, cfg.res, cfg.res,
+    z_riv = zf_c if cfg.dem_conditioning == "fill" else z
+    river = build_river(np.where(mask, z_riv, np.nan), zf_c, mask, fd, acc_ws, cfg.res, cfg.res,
                         params.river, cfg.river_threshold_km2)
-    d = Domain(z=np.where(mask, z, np.nan), mask=mask, dx=cfg.res, dy=cfg.res,
+    z_model = zf_c if cfg.dem_conditioning == "fill" else z
+    d = Domain(z=np.where(mask, z_model, np.nan), mask=mask, dx=cfg.res, dy=cfg.res,
                landclass=lc.astype(np.int64), params=params, river=river,
                transform=tf_c, crs=crs)
     meta = {"outlet_rc": (int(ro - r_a), int(co - c_a)), "area_km2": float(area),
+            "z_raw": np.where(mask, z, np.nan),
+            "hand": height_above_nearest_drainage(z_model, fd, _river_mask(river, z.shape), mask),
             "landuse_fraction": frac, "acc_km2": acc_ws, "fdir": fd}
     # gauge river indices
     g = {}
@@ -132,6 +140,19 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
         g[name] = snap_to_river(river, r, c, acc_ws, rad)
     meta["gauge_index"] = g
     return d, meta
+
+
+def _river_mask(river, shape):
+    m = np.zeros(shape, bool)
+    m[river.ri, river.rj] = True
+    return m
+
+
+def floodplain_inundation(max_depth, hand, depth_min=0.1, hand_max=10.0):
+    """Inundation map excluding hillslope sheet flow: depth >= depth_min on
+    cells with HAND <= hand_max [m]."""
+    d = np.nan_to_num(max_depth)
+    return np.where((d >= depth_min) & (np.nan_to_num(hand, nan=1e9) <= hand_max), d, 0.0)
 
 
 def snap_to_river(river, r, c, acc_km2, rad):

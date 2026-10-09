@@ -12,6 +12,23 @@ from .forcing import Hydrograph, Rainfall
 
 
 @dataclass
+class Dam:
+    """Flood-control reservoir at river cell `k` (一定量放流方式).
+
+    Inflow arriving at the dam cell is moved into the reservoir store S.
+    Release:  S < capacity : Qout = min(q_cut, Qin + S/dt)   (cut peaks above
+                             q_cut, otherwise pass inflow and drain storage)
+              S >= capacity: Qout = Qin                        (full: pass-through)
+    `capacity` is the flood-control capacity [m3] above the initial storage.
+    """
+    k: int
+    capacity: float
+    q_cut: float
+    storage0: float = 0.0
+    name: str = ""
+
+
+@dataclass
 class MassBalance:
     rain: float = 0.0
     inflow: float = 0.0
@@ -53,10 +70,14 @@ class Results:
 class Simulation:
     def __init__(self, domain: Domain, rainfall: Rainfall | None = None,
                  inflows: dict[int, Hydrograph] | None = None,
-                 h0=None, hr0=None):
+                 h0=None, hr0=None, dams: list[Dam] | None = None):
         self.d = domain
         self.rain = rainfall
         self.inflows = inflows or {}
+        self.dams = list(dams or [])
+        self.dam_S = np.array([dm.storage0 for dm in self.dams], float)
+        self.dam_qin = np.zeros(len(self.dams))
+        self.dam_qout = np.zeros(len(self.dams))
         ny, nx = domain.shape
         self._build_param_arrays()
         self.h = np.zeros((ny, nx)) if h0 is None else np.array(h0, float)
@@ -102,7 +123,7 @@ class Simulation:
         r = self.d.river
         if r is not None and r.n:
             v += float((self.hr * r.width * r.length).sum())
-        return v
+        return v + float(self.dam_S.sum())
 
     def surface_depth(self):
         return np.where(self.mask, np.maximum(self.h - self.da, 0.0), np.nan)
@@ -140,8 +161,12 @@ class Simulation:
             c_r, dts_r = K.river_fluxes(self.hr, r.zb, r.width, r.length, r.n_river, r.dn,
                                         r.outlet_slope, dt, inertial, num.limiter_frac,
                                         num.h_dry, self.Q)
+            for dm in self.dams:          # dam link is controlled by the operation rule
+                self.Q[dm.k] = 0.0
             mb.river_outflow += K.apply_river_fluxes(self.hr, r.width, r.length, r.dn,
                                                      self.Q, dt)
+            if self.dams:
+                mb.river_outflow += self._operate_dams(dt)
             K.river_slope_exchange(self.h, self.z, self.da, r.ri, r.rj, self.hr, r.zb,
                                    r.width, r.length, r.embankment, d.dx, d.dy, dt,
                                    num.mu_complete, num.mu_submerged, num.bank_factor,
@@ -156,6 +181,30 @@ class Simulation:
         if not inertial:
             dt_new = min(dt_new, num.diff_safety * min(dts_s, dts_r))
         return max(dt_new, num.dt_min)
+
+    def _operate_dams(self, dt):
+        r = self.d.river
+        vout = 0.0
+        for n, dm in enumerate(self.dams):
+            k = dm.k
+            vin = self.hr[k] * r.width[k] * r.length[k]
+            self.hr[k] = 0.0
+            self.dam_S[n] += vin
+            qin = vin / dt
+            if self.dam_S[n] < dm.capacity:
+                qout = min(dm.q_cut, qin + self.dam_S[n] / dt)
+            else:
+                qout = qin + (self.dam_S[n] - dm.capacity) / dt
+            v = min(qout * dt, self.dam_S[n])
+            self.dam_S[n] -= v
+            d = r.dn[k]
+            if d >= 0:
+                self.hr[d] += v / (r.width[d] * r.length[d])
+            else:
+                vout += v
+            self.Q[k] = v / dt
+            self.dam_qin[n], self.dam_qout[n] = qin, v / dt
+        return vout
 
     # ------------------------------------------------------------------- run
     def run(self, t_end: float, gauges: dict[str, int] | None = None,

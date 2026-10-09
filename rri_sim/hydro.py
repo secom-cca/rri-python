@@ -126,3 +126,41 @@ def topological_order(dn: np.ndarray) -> np.ndarray:
     if len(order) != n:
         raise RuntimeError("river network has cycles")
     return np.array(order, dtype=np.int64)
+
+
+def height_above_nearest_drainage(z: np.ndarray, fdir: np.ndarray, is_river: np.ndarray,
+                                  mask: np.ndarray) -> np.ndarray:
+    """HAND (Rennó et al., 2008): elevation above the river cell reached by
+    following D8 directions downstream.  Used to separate floodplain
+    inundation from sheet flow on hillslopes."""
+    ny, nx = z.shape
+    hand = np.full((ny, nx), np.nan)
+    drain_z = np.full((ny, nx), np.nan)
+    for i in range(ny):
+        for j in range(nx):
+            if not mask[i, j] or np.isfinite(drain_z[i, j]):
+                continue
+            path = []
+            a, b = i, j
+            while True:
+                if is_river[a, b]:
+                    zr = z[a, b]
+                    break
+                if np.isfinite(drain_z[a, b]):
+                    zr = drain_z[a, b]
+                    break
+                path.append((a, b))
+                k = fdir[a, b]
+                if k < 0:
+                    zr = z[a, b]
+                    break
+                a, b = a + D8_DI[k], b + D8_DJ[k]
+                if not (0 <= a < ny and 0 <= b < nx) or not mask[a, b]:
+                    zr = z[path[-1]]
+                    break
+            for (p, q) in path:
+                drain_z[p, q] = zr
+            if is_river[i, j]:
+                drain_z[i, j] = z[i, j]
+    hand[mask] = (z - drain_z)[mask]
+    return hand

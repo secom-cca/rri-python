@@ -195,3 +195,17 @@ def test_honda_formula_continuity():
     a = K.honda_unit(h1, 2 / 3 - 1e-9, 0.35, 0.91)
     b = K.honda_unit(h1, 2 / 3 + 1e-9, 0.35, 0.91)
     assert abs(a - b) / a < 0.01
+
+
+def test_dam_cuts_peak_and_conserves_mass():
+    from rri_sim.solver import Dam
+    hyd = Hydrograph([0, 3600, 6 * 3600, 12 * 3600], [50, 1500, 1500, 50])
+    out = {}
+    for cap in [0.0, 5e6, 1e9]:
+        d = valley_with_floodplain(embankment=30.0)
+        dams = [Dam(k=5, capacity=cap, q_cut=600.0)] if cap > 0 else []
+        res = Simulation(d, inflows={0: hyd}, dams=dams).run(24 * 3600, output_interval=900)
+        assert abs(res.mass.relative_error) < 1e-12
+        out[cap] = res.outlet_q.max()
+    assert out[1e9] < 650.0                 # large reservoir: outflow capped at q_cut
+    assert out[1e9] < out[5e6] <= out[0.0] * 1.01
