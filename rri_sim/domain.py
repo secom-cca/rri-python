@@ -100,7 +100,10 @@ class Domain:
                    params=params, river=river, transform=transform, crs=crs)
 
 
-def build_river(z, zf, mask, fdir, acc_km2, dx, dy, rp, threshold_km2, embankment=None):
+def build_river(z, zf, mask, fdir, acc_km2, dx, dy, rp, threshold_km2, embankment=None,
+                bed_method="monotone", outlet_reach_m=5000.0):
+    """bed_method: 'monotone' (lower downstream cells only) or 'isotonic'
+    (least-squares monotone fit of the raw-DEM profile, see condition_river_bed)."""
     is_riv = mask & (acc_km2 >= threshold_km2)
     ri, rj = np.nonzero(is_riv)
     idx = -np.ones(z.shape, dtype=np.int64)
@@ -131,14 +134,85 @@ def build_river(z, zf, mask, fdir, acc_km2, dx, dy, rp, threshold_km2, embankmen
                        else np.asarray(embankment, float)[ri, rj],
                        n_river=np.full(n, rp.n_river), area_km2=area,
                        outlet_slope=outlet_slope)
+    if bed_method == "isotonic":
+        condition_river_bed(net, net.zb.copy(), min_slope=1e-4)
     enforce_monotone_bed(net, min_slope=1e-5)
-    # outlet slope from the last reach
+    # outlet slope: mean bed slope over the last ~outlet_reach_m of the main stem
     for k in np.nonzero(net.dn < 0)[0]:
-        ups = np.nonzero(net.dn == k)[0]
-        if len(ups):
-            s = (net.zb[ups].max() - net.zb[k]) / net.length[ups].mean()
-            net.outlet_slope[k] = max(s, 1e-4)
+        path, dist = [k], 0.0
+        while dist < outlet_reach_m:
+            ups = np.nonzero(net.dn == path[-1])[0]
+            if not len(ups):
+                break
+            u = ups[np.argmax(net.area_km2[ups])]
+            dist += net.length[u]
+            path.append(u)
+        if dist > 0:
+            net.outlet_slope[k] = max((net.zb[path[-1]] - net.zb[k]) / dist, 1e-4)
     return net
+
+
+def isotonic_decreasing(y, w=None):
+    """Least-squares non-increasing fit (pool-adjacent-violators)."""
+    y = np.asarray(y, float)
+    w = np.ones_like(y) if w is None else np.asarray(w, float)
+    vals, wts, cnt = [], [], []
+    for yi, wi in zip(y, w):
+        vals.append(yi); wts.append(wi); cnt.append(1)
+        while len(vals) > 1 and vals[-2] < vals[-1]:
+            v = (vals[-2] * wts[-2] + vals[-1] * wts[-1]) / (wts[-2] + wts[-1])
+            ww, cc = wts[-2] + wts[-1], cnt[-2] + cnt[-1]
+            vals[-2:], wts[-2:], cnt[-2:] = [v], [ww], [cc]
+    return np.repeat(vals, cnt)
+
+
+def condition_river_bed(net: RiverNetwork, zb_raw: np.ndarray, min_slope: float = 1e-4):
+    """Monotone bed from a noisy raw-DEM bed profile.
+
+    Streams are processed in decreasing order of outlet area: for each
+    headwater->already-conditioned-junction path, the raw profile is replaced
+    by its least-squares non-increasing fit (balanced fill/carve, avoids the
+    flat 'lakes' of a depression-filled DEM), bounded below by the junction
+    elevation, then a minimum slope is imposed by carving."""
+    n = net.n
+    done = np.zeros(n, bool)
+    zb = np.array(zb_raw, float)
+    # headwaters sorted so that larger streams are conditioned first
+    has_up = np.zeros(n, bool)
+    has_up[net.dn[net.dn >= 0]] = True
+    heads = np.nonzero(~has_up)[0]
+
+    def path_from(h):
+        p = [h]
+        while net.dn[p[-1]] >= 0:
+            p.append(net.dn[p[-1]])
+        return p
+
+    paths = [path_from(h) for h in heads]
+    paths.sort(key=lambda p: -len(p))
+    for p in paths:
+        seg = []
+        for k in p:
+            if done[k]:
+                break
+            seg.append(k)
+        if not seg:
+            continue
+        junction = p[len(seg)] if len(seg) < len(p) else None
+        fit = isotonic_decreasing(zb[seg])
+        if junction is not None:
+            lo = zb[junction]
+            # cumulative distance to junction for minimum-slope floor
+            dist = np.cumsum(net.length[seg][::-1])[::-1]
+            fit = np.maximum(fit, lo + min_slope * dist)
+        # carve to minimum slope going downstream
+        for a in range(1, len(seg)):
+            fit[a] = min(fit[a], fit[a - 1] - min_slope * net.length[seg[a - 1]])
+        zb[seg] = fit
+        done[seg] = True
+    dz = zb - net.zb
+    net.zb[:] = zb
+    return dz
 
 
 def enforce_monotone_bed(net: RiverNetwork, min_slope: float = 0.0):

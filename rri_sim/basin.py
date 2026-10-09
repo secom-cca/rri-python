@@ -122,10 +122,18 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     # the outlet cell must drain out of the domain
     fd[ro - r_a, co - c_a] = -1
     acc_ws = flow_accumulation(fd, mask, cfg.res ** 2) / 1e6
-    z_riv = zf_c if cfg.dem_conditioning == "fill" else z
-    river = build_river(np.where(mask, z_riv, np.nan), zf_c, mask, fd, acc_ws, cfg.res, cfg.res,
-                        params.river, cfg.river_threshold_km2)
+    # river bed from the raw DEM, conditioned by isotonic regression; the slope
+    # surface uses the filled DEM (river cells: ground = max(raw, bed + depth))
+    river = build_river(np.where(mask, z, np.nan), zf_c, mask, fd, acc_ws, cfg.res, cfg.res,
+                        params.river, cfg.river_threshold_km2, bed_method="isotonic")
     z_model = zf_c if cfg.dem_conditioning == "fill" else z
+    # channel must be at least the geometric (RRI) depth below the model ground
+    from .domain import enforce_monotone_bed
+    zg = z_model[river.ri, river.rj]
+    d_geom = params.river.depth(river.area_km2)
+    river.zb[:] = np.minimum(river.zb, zg - d_geom)
+    enforce_monotone_bed(river, min_slope=1e-5)
+    river.depth[:] = zg - river.zb
     d = Domain(z=np.where(mask, z_model, np.nan), mask=mask, dx=cfg.res, dy=cfg.res,
                landclass=lc.astype(np.int64), params=params, river=river,
                transform=tf_c, crs=crs)
