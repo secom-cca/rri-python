@@ -1,0 +1,15 @@
+pyproject.toml
+rri_sim/__init__.py
+rri_sim/domain.py
+rri_sim/forcing.py
+rri_sim/hydro.py
+rri_sim/kernels.py
+rri_sim/params.py
+rri_sim/solver.py
+rri_sim/synthetic.py
+rri_sim.egg-info/PKG-INFO
+rri_sim.egg-info/SOURCES.txt
+rri_sim.egg-info/dependency_links.txt
+rri_sim.egg-info/requires.txt
+rri_sim.egg-info/top_level.txt
+tests/test_verification.py

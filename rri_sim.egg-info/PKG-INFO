@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: rri-sim
+Version: 0.1.0
+Summary: Python rainfall-runoff-inundation simulator based on RRI-model physics for basin-wide flood management studies
+Requires-Python: >=3.11
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: numba
+Requires-Dist: matplotlib
+Requires-Dist: pyproj
+Requires-Dist: rasterio
+Requires-Dist: requests
+Requires-Dist: pillow
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"

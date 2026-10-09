@@ -1,0 +1,11 @@
+numpy
+scipy
+numba
+matplotlib
+pyproj
+rasterio
+requests
+pillow
+
+[dev]
+pytest
