@@ -31,6 +31,10 @@ class LandClassParams:
     phi_minus_theta: float = 0.3  # Green-Ampt (porosity - initial water content)
     sf: float = 0.1               # Green-Ampt suction at wetting front [m]
     infilt_limit: float = np.inf  # max cumulative infiltration depth [m]
+    # surface storage not moved by overland flow (paddy ridge / 田んぼダム plate) [m]
+    store_depth: float = 0.0
+    # release rate of the retained water (orifice, linear reservoir) [1/s]
+    leak_rate: float = 0.0
 
     @property
     def d_a(self) -> float:
@@ -79,6 +83,9 @@ class NumericsParams:
     mu_complete: float = 0.35
     mu_submerged: float = 0.91
     bank_factor: float = 2.0      # overflow length = bank_factor * channel length (two banks)
+    # levees have sluice gates (樋門): land-side water drains to the river when the
+    # river is lower; river water cannot flow back below the levee crest
+    sluice_gates: bool = True
     h_dry: float = 1e-6           # [m] depth below which a cell is treated dry for celerity
 
 

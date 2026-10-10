@@ -115,8 +115,24 @@ class Simulation:
         self.phi_theta = arr("phi_minus_theta")
         self.sf = arr("sf")
         self.inf_limit = arr("infilt_limit")
+        self.sd = arr("store_depth")
+        self.leak = arr("leak_rate")
         self.z = np.where(d.mask, d.z, 0.0)
         self.mask = d.mask.astype(np.bool_)
+        self.has_retention = bool((self.leak > 0).any() and (self.sd > 0).any())
+
+    STATE_FIELDS = ("h", "hr", "F", "qsx", "qsy", "Q", "dam_S")
+
+    def get_state(self) -> dict:
+        """Copy of the prognostic state (for restarts / scenario branching)."""
+        return {"t": self.t, **{k: getattr(self, k).copy() for k in self.STATE_FIELDS}}
+
+    def set_state(self, st: dict, reset_time: bool = True):
+        for k in self.STATE_FIELDS:
+            if k in st and getattr(self, k).shape == st[k].shape:
+                setattr(self, k, st[k].copy())
+        self.h[~self.mask] = 0.0
+        self.t = 0.0 if reset_time else st["t"]
 
     def storage(self) -> float:
         v = float(self.h[self.mask].sum()) * self.d.cell_area
@@ -145,12 +161,15 @@ class Simulation:
         # 2D slope
         inertial = num.scheme == "inertial"
         c_s, dts_s = K.slope_fluxes(self.h, self.z, self.mask, self.n, self.ka, self.da,
-                                    self.dm, self.beta, self.bnd_slope, d.dx, d.dy, dt,
+                                    self.dm, self.beta, self.sd, self.bnd_slope, d.dx, d.dy, dt,
                                     inertial, num.limiter_frac, num.h_dry,
                                     self.fx, self.fy, self.fb, self.qsx, self.qsy)
         mb.boundary_outflow += K.apply_slope_fluxes(self.h, self.mask, self.fx, self.fy,
                                                     self.fb, self.qsx, self.qsy,
                                                     d.dx, d.dy, dt)
+        if self.has_retention:
+            K.retained_release(self.h, self.z, self.mask, self.da, self.sd, self.leak,
+                               d.dx, d.dy, dt)
         c_r, dts_r = 0.0, np.inf
         if r is not None and r.n:
             # external inflows to river cells
@@ -167,10 +186,10 @@ class Simulation:
                                                      self.Q, dt)
             if self.dams:
                 mb.river_outflow += self._operate_dams(dt)
-            K.river_slope_exchange(self.h, self.z, self.da, r.ri, r.rj, self.hr, r.zb,
+            K.river_slope_exchange(self.h, self.z, self.da, self.sd, r.ri, r.rj, self.hr, r.zb,
                                    r.width, r.length, r.embankment, d.dx, d.dy, dt,
                                    num.mu_complete, num.mu_submerged, num.bank_factor,
-                                   self.qex)
+                                   self.qex, num.sluice_gates)
         self.t += dt
         # next admissible dt
         dt_new = num.dt_max
@@ -209,7 +228,10 @@ class Simulation:
     # ------------------------------------------------------------------- run
     def run(self, t_end: float, gauges: dict[str, int] | None = None,
             output_interval: float = 600.0, snapshot_interval: float | None = None,
-            dt0: float = 1.0, verbose: bool = False) -> Results:
+            dt0: float = 1.0, verbose: bool = False, progress=None,
+            snapshot_fn=None) -> Results:
+        """progress(fraction) is called at every output time; snapshot_fn(sim)
+        (default: surface depth + river depth) is stored at snapshot times."""
         gauges = gauges or {}
         d = self.d
         mb = MassBalance(storage0=self.storage())
@@ -250,11 +272,14 @@ class Simulation:
                     gh[g].append(self.hr[k])
                 outq.append(float(self.Q[outlets].sum()) if nr else 0.0)
                 next_out += output_interval
+                if progress is not None:
+                    progress(min(self.t / t_end, 1.0))
                 if verbose:
                     print(f"t={self.t/3600:8.2f} h  dt={dt_step:7.3f}s  "
                           f"steps={nsteps}  Qout={outq[-1]:.2f}")
             if self.t >= next_snap - 1e-9:
-                snaps.append((self.t, self.surface_depth(), self.hr.copy()))
+                snaps.append((self.t, self.surface_depth(), self.hr.copy()) if snapshot_fn is None
+                             else (self.t, snapshot_fn(self)))
                 next_snap += snapshot_interval
         mb.storage = self.storage()
         maxd = np.where(d.mask, maxd, np.nan)

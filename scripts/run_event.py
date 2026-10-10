@@ -11,37 +11,11 @@ import numpy as np
 import pandas as pd
 
 from rri_sim import metrics, viz
-from rri_sim.basin import build_basin, default_land_params
 from rri_sim.cases import BASINS, EVENTS
 from rri_sim.data import ROOT, mlit_water
 from rri_sim.events import basin_mean_series, collect_gauges, gridded_rainfall
-from rri_sim.params import ModelParams
+from rri_sim.workflow import apply_overrides, build  # noqa: F401  (re-exported)
 from rri_sim.solver import Simulation
-
-
-def apply_overrides(params, sets):
-    names = {c.name: c for c in params.land_classes}
-    for s in sets or []:
-        key, val = s.split("=")
-        obj, attr = key.split(".")
-        if obj == "all":                       # apply to every land class having attr>0
-            for c in params.land_classes:
-                setattr(c, attr, float(val))
-            continue
-        target = {"river": params.river, "num": params.numerics}.get(obj) or names[obj]
-        cur = getattr(target, attr)
-        setattr(target, attr, type(cur)(val) if not isinstance(cur, bool) else val == "True")
-
-
-def build(basin_key, sets=None, threshold=None):
-    b = BASINS[basin_key]
-    cfg = b["cfg"]
-    if threshold is not None:
-        cfg.river_threshold_km2 = threshold
-    params = ModelParams(land_classes=default_land_params())
-    apply_overrides(params, sets)
-    d, meta = build_basin(cfg, params, verbose=False)
-    return d, meta, b
 
 
 def run_event(event_key, tag="base", sets=None, threshold=None, save=True, verbose=True):

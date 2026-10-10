@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from run_event import build  # noqa: E402
+from rri_sim.workflow import build  # noqa: E402
 
 from rri_sim import damage as D  # noqa: E402
 from rri_sim.assets import build_assets  # noqa: E402

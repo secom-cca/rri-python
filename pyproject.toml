@@ -7,13 +7,17 @@ name = "rri-sim"
 version = "0.1.0"
 description = "Python rainfall-runoff-inundation simulator based on RRI-model physics for basin-wide flood management studies"
 requires-python = ">=3.11"
-dependencies = ["numpy", "scipy", "numba", "matplotlib", "pyproj", "rasterio", "requests", "pillow"]
+dependencies = ["numpy", "scipy", "numba", "matplotlib", "pyproj", "rasterio", "requests", "pillow",
+                "pandas", "pyshp", "fastapi", "uvicorn"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "playwright"]
 
 [tool.setuptools.packages.find]
 include = ["rri_sim*"]
+
+[tool.setuptools.package-data]
+"rri_sim.gui" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

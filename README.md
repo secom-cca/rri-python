@@ -20,11 +20,24 @@ rri_sim/
   assets.py       e-Stat メッシュ統計から資産基礎数量
   scenarios.py    浚渫・堤防嵩上げ・遊水地・土地利用変更
   metrics.py      NSE, KGE, ピーク誤差, CSI 等
+  workflow.py     流域構築＋校正済みパラメータのプリセット（キャッシュ付き）
+  gui/            3D GUI（FastAPI + three.js）: engine.py, server.py, static/
   data/           gsi_dem, mlit_water, jma, landuse, estat（キャッシュ付き取得）
 scripts/          run_event.py, calibrate.py, damage_from_result.py, compare_schemes_levee.py
 tests/            検証テスト（解析解・V字流域・保存性・被害率）
-docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告
+docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI
 ```
+
+## 3D GUI（施策を塗って洪水計算・被害額を比較）
+
+```bash
+.venv/bin/python -m rri_sim.gui      # → http://127.0.0.1:8765
+```
+
+森林化・田んぼダム・住宅移転/嵩上げ・堤防・遊水地を地図上で塗り、洪水計算を実行して
+浸水深の時間変化と被害額（現況比）を3Dで確認できる。詳細は [docs/05_gui.md](docs/05_gui.md)。
+
+![GUI](docs/figures/gui_damage.png)
 
 ## 使い方
 

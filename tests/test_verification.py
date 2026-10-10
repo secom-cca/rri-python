@@ -209,3 +209,33 @@ def test_dam_cuts_peak_and_conserves_mass():
         out[cap] = res.outlet_q.max()
     assert out[1e9] < 650.0                 # large reservoir: outflow capped at q_cut
     assert out[1e9] < out[5e6] <= out[0.0] * 1.01
+
+
+def test_paddy_dam_reduces_peak_and_releases_slowly():
+    """田んぼダム: store_depth retains rain, leak releases it later.
+    Peak outflow must drop, outflow continues after rain, mass is conserved."""
+    out = {}
+    for name, sd, leak in [("normal", 0.0, 0.0), ("paddy_dam", 0.10, 1e-5)]:
+        land = LandClassParams(n=0.3, store_depth=sd, leak_rate=leak)
+        d = tilted_plane(length=1000.0, width=50.0, dx=50.0, slope=0.002, land=land)
+        rain = Rainfall.uniform([0, 3 * 3600, 48 * 3600], [40.0, 0.0], d.shape)
+        sim = Simulation(d, rain)
+        res = sim.run(48 * 3600, output_interval=600, snapshot_interval=600,
+                      snapshot_fn=lambda s: float(s.fb.sum()))
+        assert abs(res.mass.relative_error) < 1e-12
+        assert sim.h.min() >= 0
+        out[name] = np.array([v for _, v in res.snapshots])
+    qn, qp = out["normal"], out["paddy_dam"]
+    assert qp.max() < 0.8 * qn.max()                 # peak reduced
+    late = slice(len(qn) // 3, None)                 # > 16 h: slow release continues
+    assert qp[late].sum() > qn[late].sum()
+
+
+def test_floor_raise_reduces_damage():
+    from rri_sim import damage as D
+    a = D.AssetGrid(floor_area_m2=np.array([1000.0, 1000.0]), households=np.array([10.0, 10.0]))
+    h = np.array([1.2, 1.2])
+    base = D.estimate_damage(h, a, ground_slope=np.zeros(2)).by_category["house"]
+    raised = D.estimate_damage(h, a, ground_slope=np.zeros(2),
+                               floor_height=np.array([0.45, 1.45])).by_category["house"]
+    assert np.isclose(raised[0], base[0]) and raised[1] < 0.2 * base[1]

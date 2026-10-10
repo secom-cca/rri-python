@@ -82,7 +82,7 @@ def implicit_friction(rhs, a):
 
 @njit(cache=True, inline="always")
 def slope_face(Ha, Hb, za, zb, ha, hb, na, nb, kaa, kab, daa, dab, dma, dmb, ba, bb,
-               dist, width, area, dt, inertial, q_old, lim_frac, h_dry):
+               sda, sdb, dist, width, area, dt, inertial, q_old, lim_frac, h_dry):
     """Discharge through one slope face, a -> b positive.
 
     Returns (Q_total [m^3/s], q_surface [m^2/s, signed], celerity, dt_stab).
@@ -96,9 +96,9 @@ def slope_face(Ha, Hb, za, zb, ha, hb, na, nb, kaa, kab, daa, dab, dma, dmb, ba,
     """
     dH = Ha - Hb
     if dH > 0.0 or (dH == 0.0 and q_old > 0.0):
-        hd, nd, kad, dad, dmd, bd = ha, na, kaa, daa, dma, ba
+        hd, nd, kad, dad, dmd, bd, sdd = ha, na, kaa, daa, dma, ba, sda
     elif dH < 0.0 or q_old < 0.0:
-        hd, nd, kad, dad, dmd, bd = hb, nb, kab, dab, dmb, bb
+        hd, nd, kad, dad, dmd, bd, sdd = hb, nb, kab, dab, dmb, bb, sdb
     else:
         return 0.0, 0.0, 0.0, np.inf
     hf = max(Ha, Hb) - max(za, zb)
@@ -109,7 +109,9 @@ def slope_face(Ha, Hb, za, zb, ha, hb, na, nb, kaa, kab, daa, dab, dma, dmb, ba,
     s = abs(dH) / dist
     sgn = 1.0 if dH > 0.0 else -1.0
     qsub = subsurface_discharge(hf, s, kad, dad, dmd, bd)
-    hs = surface_depth_of(hf, kad, dad)
+    # surface water below the donor's store depth (paddy ridge / outlet plate,
+    # 田んぼダム) is retained and not moved by surface flow
+    hs = surface_depth_of(hf, kad, dad) - sdd
     qs = 0.0
     c = 0.0
     if hs > h_dry:
@@ -134,8 +136,8 @@ def slope_face(Ha, Hb, za, zb, ha, hb, na, nb, kaa, kab, daa, dab, dma, dmb, ba,
     return Q, qs, c, dts
 
 
-@njit(cache=True)
-def slope_fluxes(h, z, mask, n, ka, da, dm, beta, bnd_slope, dx, dy, dt, inertial,
+@njit(cache=True, nogil=True)
+def slope_fluxes(h, z, mask, n, ka, da, dm, beta, sd, bnd_slope, dx, dy, dt, inertial,
                  lim_frac, h_dry, fx, fy, fb, qsx, qsy):
     """Face discharges [m^3/s]: fx east faces (ny, nx-1), fy south faces
     (ny-1, nx), fb open-boundary outflow (ny, nx).  qsx/qsy hold the surface
@@ -155,7 +157,7 @@ def slope_fluxes(h, z, mask, n, ka, da, dm, beta, bnd_slope, dx, dy, dt, inertia
                 z[i, j] + h[i, j], z[i, j + 1] + h[i, j + 1], z[i, j], z[i, j + 1],
                 h[i, j], h[i, j + 1], n[i, j], n[i, j + 1], ka[i, j], ka[i, j + 1],
                 da[i, j], da[i, j + 1], dm[i, j], dm[i, j + 1], beta[i, j], beta[i, j + 1],
-                dx, dy, area, dt, inertial, qsx[i, j], lim_frac, h_dry)
+                sd[i, j], sd[i, j + 1], dx, dy, area, dt, inertial, qsx[i, j], lim_frac, h_dry)
             fx[i, j] = Q
             qsx[i, j] = qs
             cmax = max(cmax, c)
@@ -170,7 +172,7 @@ def slope_fluxes(h, z, mask, n, ka, da, dm, beta, bnd_slope, dx, dy, dt, inertia
                 z[i, j] + h[i, j], z[i + 1, j] + h[i + 1, j], z[i, j], z[i + 1, j],
                 h[i, j], h[i + 1, j], n[i, j], n[i + 1, j], ka[i, j], ka[i + 1, j],
                 da[i, j], da[i + 1, j], dm[i, j], dm[i + 1, j], beta[i, j], beta[i + 1, j],
-                dy, dx, area, dt, inertial, qsy[i, j], lim_frac, h_dry)
+                sd[i, j], sd[i + 1, j], dy, dx, area, dt, inertial, qsy[i, j], lim_frac, h_dry)
             fy[i, j] = Q
             qsy[i, j] = qs
             cmax = max(cmax, c)
@@ -185,7 +187,7 @@ def slope_fluxes(h, z, mask, n, ka, da, dm, beta, bnd_slope, dx, dy, dt, inertia
     return cmax, dtsmin
 
 
-@njit(cache=True)
+@njit(cache=True, nogil=True)
 def apply_slope_fluxes(h, mask, fx, fy, fb, qsx, qsy, dx, dy, dt):
     """Positivity-limited, conservative update of slope storage.
     Returns outflow volume through the open boundary [m^3]."""
@@ -249,7 +251,7 @@ def apply_slope_fluxes(h, mask, fx, fy, fb, qsx, qsy, dx, dy, dt):
 
 
 # ---------------------------------------------------------------- river physics
-@njit(cache=True)
+@njit(cache=True, nogil=True)
 def river_fluxes(hr, zb, width, length, nr, dn, outlet_slope, dt, inertial, lim_frac,
                  h_dry, Q):
     """Discharge from each river cell to its downstream cell [m^3/s]
@@ -317,7 +319,7 @@ def river_fluxes(hr, zb, width, length, nr, dn, outlet_slope, dt, inertial, lim_
     return cmax, dtsmin
 
 
-@njit(cache=True)
+@njit(cache=True, nogil=True)
 def apply_river_fluxes(hr, width, length, dn, Q, dt):
     """Positivity-limited river update.  Returns outlet outflow volume [m^3]."""
     nriv = hr.shape[0]
@@ -366,9 +368,9 @@ def honda_unit(h1, h2, mu1, mu2):
     return mu2 * h2 * math.sqrt(2.0 * G * (h1 - h2))       # submerged overflow
 
 
-@njit(cache=True)
-def river_slope_exchange(h, z, da, ri, rj, hr, zb, width, length, embank,
-                         dx, dy, dt, mu1, mu2, bank_factor, qex):
+@njit(cache=True, nogil=True)
+def river_slope_exchange(h, z, da, sd, ri, rj, hr, zb, width, length, embank,
+                         dx, dy, dt, mu1, mu2, bank_factor, qex, sluice_gates=True):
     """Exchange between river cell and the slope storage of the same grid cell.
 
     Water levels: slope  Hs = z + max(h - d_a, 0)  (surface water only)
@@ -387,19 +389,23 @@ def river_slope_exchange(h, z, da, ri, rj, hr, zb, width, length, embank,
         if hsurf < 0.0:
             hsurf = 0.0
         Hs = z[i, j] + hsurf
+        hsurf = max(hsurf - sd[i, j], 0.0)       # retained (paddy) water does not spill
         Hr = zb[k] + hr[k]
         zc = z[i, j] + embank[k]
         Ar = width[k] * length[k]
         L = bank_factor * length[k]
         if Hs > Hr:
-            h1 = Hs - zc
+            # 樋門 / flap gate: land-side water drains through the levee when the
+            # river is lower (crest = ground); river water cannot flow back.
+            zc_out = z[i, j] if sluice_gates else zc
+            h1 = Hs - zc_out
             if h1 <= 0.0 or hsurf <= 0.0:
                 continue
-            h2 = max(Hr - zc, 0.0)
+            h2 = max(Hr - zc_out, 0.0)
             V = honda_unit(h1, h2, mu1, mu2) * L * dt
             # donor may drain to the crest or to the equalised level at most
             Vmax = min(h1, hsurf) * area
-            if Hr > zc:
+            if Hr > zc_out:
                 Vmax = min(Vmax, (Hs - Hr) * area * Ar / (area + Ar))
             if V > Vmax:
                 V = Vmax
@@ -423,7 +429,7 @@ def river_slope_exchange(h, z, da, ri, rj, hr, zb, width, length, embank,
 
 
 # --------------------------------------------------------------- infiltration
-@njit(cache=True)
+@njit(cache=True, nogil=True)
 def green_ampt(h, F, mask, da, kv, phi_theta, sf, limit, dt):
     """Green-Ampt vertical infiltration removing surface water to a loss store F.
 
@@ -468,3 +474,40 @@ def green_ampt(h, F, mask, da, kv, phi_theta, sf, limit, dt):
             F[i, j] += inf
             tot += inf
     return tot
+
+
+@njit(cache=True, nogil=True)
+def retained_release(h, z, mask, da, sd, leak, dx, dy, dt):
+    """Slow release of water retained below the store depth (田んぼダム outlet
+    plate / orifice), modelled as a linear reservoir with rate `leak` [1/s]:
+        V_out = min(h_s, sd) * (1 - exp(-leak dt)) * A
+    released to the 4-neighbour with the lowest water level (if lower).
+    Mass-conserving (moves between cells only)."""
+    ny, nx = h.shape
+    dV = np.zeros((ny, nx))
+    for i in range(ny):
+        for j in range(nx):
+            if not mask[i, j] or leak[i, j] <= 0.0 or sd[i, j] <= 0.0:
+                continue
+            hs = h[i, j] - da[i, j]
+            if hs <= 0.0:
+                continue
+            ret = min(hs, sd[i, j])
+            H = z[i, j] + h[i, j]
+            best, bi, bj = H, -1, -1
+            for di, dj in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+                a, b = i + di, j + dj
+                if 0 <= a < ny and 0 <= b < nx and mask[a, b]:
+                    Hn = z[a, b] + h[a, b]
+                    if Hn < best:
+                        best, bi, bj = Hn, a, b
+            if bi < 0:
+                continue
+            dh = ret * (1.0 - math.exp(-leak[i, j] * dt))
+            dh = min(dh, 0.5 * (H - best))         # do not invert the levels
+            if dh > 0.0:
+                dV[i, j] -= dh
+                dV[bi, bj] += dh
+    for i in range(ny):
+        for j in range(nx):
+            h[i, j] += dV[i, j]

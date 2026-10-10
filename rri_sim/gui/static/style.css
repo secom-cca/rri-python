@@ -1,0 +1,49 @@
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --ink: #1d2327; --muted: #67717a; --line: #dde1e4;
+  --accent: #1f6fd1; --accent-ink: #ffffff; --danger: #c0392b; --good: #23864b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 13px/1.45 "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+#app { display: grid; grid-template-columns: 290px 1fr 360px; height: 100vh; }
+aside { background: var(--panel); overflow-y: auto; padding: 10px 14px; border-right: 1px solid var(--line); }
+#right { border-right: 0; border-left: 1px solid var(--line); }
+h1 { font-size: 16px; margin: 4px 0 10px; } h1 small { color: var(--muted); font-weight: 400; font-size: 11px; }
+h2 { font-size: 13px; margin: 14px 0 6px; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+section { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+label { display: block; margin: 6px 0; } label.chk { display: flex; gap: 6px; align-items: center; }
+select, input[type=number] { font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 4px; }
+select { width: 100%; } input[type=number] { width: 70px; }
+.tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.tools button, .row button { font: inherit; padding: 5px 8px; border: 1px solid var(--line); background: #fafafa;
+  border-radius: 5px; cursor: pointer; }
+.tools button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.row { display: flex; gap: 6px; margin-top: 8px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); flex: 1; font-weight: 600; }
+button:disabled { opacity: .5; cursor: wait; }
+.hint { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+#tool-params > div { display: none; } #tool-params > div.show { display: block; }
+#edits { list-style: none; padding: 0; margin: 0; max-height: 170px; overflow-y: auto; }
+#edits li { display: flex; justify-content: space-between; align-items: center; padding: 3px 4px;
+  border-bottom: 1px dashed var(--line); }
+#edits li .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+#edits li button { border: 0; background: none; color: var(--danger); cursor: pointer; }
+#progress { margin-top: 8px; height: 18px; background: #eef1f3; border-radius: 4px; position: relative; overflow: hidden; }
+#bar { height: 100%; width: 0; background: #9cc3f0; transition: width .3s; }
+#pmsg { position: absolute; inset: 0; font-size: 11px; display: flex; align-items: center; padding-left: 6px; }
+#view { position: relative; overflow: hidden; background: #dfe6ea; }
+#view canvas { display: block; }
+#legend { position: absolute; left: 12px; top: 12px; background: rgba(255,255,255,.9); padding: 6px 8px;
+  border-radius: 6px; font-size: 11.5px; pointer-events: none; }
+#legend .item { display: flex; align-items: center; gap: 6px; } #legend .sw { width: 14px; height: 10px; border-radius: 2px; }
+#hover { position: absolute; right: 12px; top: 12px; background: rgba(255,255,255,.9); padding: 6px 8px;
+  border-radius: 6px; font-size: 11.5px; pointer-events: none; min-width: 170px; white-space: pre; }
+#timebar { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 8px; align-items: center;
+  background: rgba(255,255,255,.92); padding: 6px 10px; border-radius: 6px; }
+#timebar input { flex: 1; } #timebar button { font: inherit; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer; }
+#time-label { min-width: 150px; font-variant-numeric: tabular-nums; }
+#kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; font-size: 12px; }
+#kpis .h { color: var(--muted); font-size: 11px; } #kpis .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+#kpis .good { color: var(--good); } #kpis .bad { color: var(--danger); }
+.log { font-size: 11.5px; color: var(--muted); white-space: pre-wrap; max-height: 220px; overflow-y: auto; }
+#gauge { width: auto; font-size: 12px; }
