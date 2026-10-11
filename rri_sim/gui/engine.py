@@ -47,7 +47,8 @@ from ..cases import BASINS, EVENTS
 from ..data import estat, facilities, landuse, mlit_water
 from ..events import collect_gauges, gridded_rainfall
 from ..solver import Simulation
-from ..workflow import CACHE, FOREST_NEW, PADDY_DAM, PRESETS, boundary_conditions, build_preset
+from ..workflow import (CACHE, FOREST_NEW, PADDY_DAM, PRESETS, boundary_conditions, build_preset,
+                        drainage_arrays)
 
 log = logging.getLogger("rri_sim.gui")
 HAND_DISPLAY_MAX = 15.0       # m; cells that can show inundation in the GUI
@@ -142,6 +143,7 @@ class BasinSession:
                         "eval_start": e.eval_start, "eval_end": e.eval_end} for e in self.events],
             "preset": PRESETS.get(self.key, {}),
             "unit_costs": C.UNIT_COSTS,
+            "note": self.b.get("gui_note", ""),
         }
 
     # -------------------------------------------------------------- spin-up
@@ -166,7 +168,8 @@ class BasinSession:
         else:
             rain0, _ = gridded_rainfall(self.d, data, stations, T0)
             dams0, sbc0, _ = boundary_conditions(self.key, self.d, self.meta, T0, ev.end)
-            sim = Simulation(self.d, rain0, dams=dams0, stage_bc=sbc0)
+            sim = Simulation(self.d, rain0, dams=dams0, stage_bc=sbc0,
+                             drainage=drainage_arrays(self.key, self.d, self.meta))
             sim.run((Te - T0).total_seconds(), output_interval=6 * 3600,
                     progress=(lambda f: progress(0.05 + 0.45 * f, "スピンアップ計算中（初回のみ）"))
                     if progress else None)
@@ -329,7 +332,8 @@ class BasinSession:
         base_depth = self._baseline[event_key]["_depth"] if (not is_base and event_key in self._baseline) else None
         d, assets, pop, floor, edit_log, storage, applied = self.apply_edits(edits, gparams, base_depth)
         dams = [copy.copy(dm) for dm in prep["dams"]]
-        sim = Simulation(d, prep["rain"], dams=dams, stage_bc=prep["stage_bc"])
+        sim = Simulation(d, prep["rain"], dams=dams, stage_bc=prep["stage_bc"],
+                         drainage=drainage_arrays(self.key, d, self.meta, d.landclass))
         sim.set_state(prep["state"])
         fc = self.flood_cells
 

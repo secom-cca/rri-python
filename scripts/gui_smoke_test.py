@@ -10,6 +10,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "outputs/gui")
+BASIN = sys.argv[2] if len(sys.argv) > 2 else None
 OUT.mkdir(parents=True, exist_ok=True)
 URL = "http://127.0.0.1:8765/"
 
@@ -34,7 +35,11 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.goto(URL)
-    print("baseline:", wait_progress(page, "現況の計算完了"))
+    if BASIN:
+        wait_progress(page, "現況の計算完了")
+        page.select_option("#basin", BASIN)
+        time.sleep(2)
+    print("baseline:", wait_progress(page, "現況の計算完了", timeout=3600))
     page.screenshot(path=str(OUT / "01_baseline_flood.png"))
 
     # paint measures: paddy dam over the centre, levee along the river, raise houses
@@ -63,7 +68,7 @@ with sync_playwright() as p:
 
     paint("relocate", [(cx + 100, cy - 60), (cx + 140, cy - 40)], "1")
     page.click("#run")
-    print("scenario:", wait_progress(page, "完了: 被害額"))
+    print("scenario:", wait_progress(page, "完了: 被害額", timeout=3600))
     page.screenshot(path=str(OUT / "06_costs.png"))
     page.click("#tabs button[data-tab=indic]")
     page.screenshot(path=str(OUT / "07_indicators.png"))

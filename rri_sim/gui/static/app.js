@@ -717,6 +717,7 @@ async function loadBasin(key) {
   st._z.forEach((v) => { if (Number.isFinite(v)) { zmin = Math.min(zmin, v); zmax = Math.max(zmax, v); } });
   S.zmin = zmin; S.zmax = zmax;
   $('basin-info').textContent = `流域面積 ${st.area_km2.toFixed(0)} km²、${st.nx}×${st.ny} セル（${st.dx} m）、河道 ${st.river.ri.length} セル、人口 ${Math.round(st.population_total).toLocaleString()}、世帯 ${Math.round(st.households_total).toLocaleString()}、資産 ${st.asset_total_oku.toFixed(0)} 億円、ダム ${Object.keys(st.dams).length}`;
+  $('basin-note').textContent = st.note || '';
   $('event').innerHTML = st.events.map((e) => `<option value="${e.key}">${e.label}</option>`).join('');
   const pref = st.events.find((e) => e.role === 'validation' && /20(19|20)$/.test(e.key)) || st.events[st.events.length - 1];
   $('event').value = pref.key; S.event = pref.key;

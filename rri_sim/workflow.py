@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pickle
 
+import numpy as np
+
 from .basin import build_basin, default_land_params
 from .cases import BASINS
 from .data import ROOT
@@ -75,7 +77,7 @@ def build(basin_key, sets=None, threshold=None, use_cache=False):
     if threshold is not None:
         cfg.river_threshold_km2 = threshold
     import hashlib
-    sig = hashlib.sha1(("|".join(sets or [])).encode()).hexdigest()[:10]   # stable across runs
+    sig = hashlib.sha1(("|".join(sets or []) + str(b.get("existing_levees")) + str(b.get("lowland_river_n")) + "w3coast").encode()).hexdigest()[:10]
     key = f"{basin_key}_{cfg.res:.0f}_{cfg.river_threshold_km2}_{sig}"
     path = CACHE / f"domain_{key}.pkl"
     if use_cache and path.exists():
@@ -91,6 +93,27 @@ def build(basin_key, sets=None, threshold=None, use_cache=False):
     params = ModelParams(land_classes=model_land_params())
     apply_overrides(params, sets)
     d, meta = build_basin(cfg, params, verbose=False)
+    nl = b.get("lowland_river_n")
+    if nl:
+        # Manning n of large lowland reaches is smaller than that of steep gravel
+        # rivers (the calibrated value): n by local bed slope
+        r = d.river
+        slope = np.full(r.n, 1e-2)
+        has = r.dn >= 0
+        slope[has] = (r.zb[has] - r.zb[r.dn[has]]) / r.length[has]
+        slope[~has] = r.outlet_slope[~has]
+        for s_max, n_val in sorted(nl.items()):
+            r.n_river[slope < s_max] = np.minimum(r.n_river[slope < s_max], n_val)
+        meta["lowland_n_cells"] = int((slope < max(nl)).sum())
+    lev = b.get("existing_levees")
+    if lev:
+        from .levees import estimate_levees
+        emb, stats, width = estimate_levees(d, min_area_km2=lev.get("min_area_km2", 200.0))
+        d.river.embankment[:] = np.maximum(d.river.embankment, emb)
+        ok = np.isfinite(width)
+        cap = lev.get("max_width_cells", 2.5) * d.dx
+        d.river.width[ok] = np.clip(np.maximum(d.river.width[ok], width[ok]), None, cap)
+        meta["levee_stats"] = stats
     if use_cache:
         CACHE.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
@@ -138,3 +161,29 @@ def boundary_conditions(basin_key, domain, meta, t0, t_end):
                 stage_bc[int(k)] = (ts, H)
         info["tide"] = {"station": tide, "zero_TP": zero, "H_range": [float(np.nanmin(H)), float(np.nanmax(H))]}
     return dams, stage_bc, info
+
+
+def drainage_arrays(basin_key, domain, meta, landclass=None):
+    """Lowland drainage (pumps / sewers / creeks) for a registered basin:
+    (rate [m/s] per cell, target river index per cell) or None.
+    Applies to cells with HAND <= hand_max_m; urban and farmland rates differ."""
+    spec = BASINS[basin_key].get("lowland_drainage")
+    if not spec:
+        return None
+    from .hydro import drain_target
+    d = domain
+    r = d.river
+    if "drain_target_k" not in meta:
+        is_riv = np.zeros(d.shape, bool)
+        is_riv[r.ri, r.rj] = True
+        tgt = drain_target(meta["fdir"], is_riv, d.mask)
+        lut = -np.ones(d.shape[0] * d.shape[1], np.int64)
+        lut[r.ri * d.shape[1] + r.rj] = np.arange(r.n)
+        meta["drain_target_k"] = np.where(tgt >= 0, lut[np.maximum(tgt, 0)], -1)
+    lc = d.landclass if landclass is None else landclass
+    names = np.asarray([c.name for c in d.params.land_classes])[lc]
+    low = d.mask & (np.nan_to_num(meta["hand"], nan=1e9) <= spec.get("hand_max_m", 5.0))
+    rate = np.zeros(d.shape)
+    rate[low & (names == "urban")] = spec.get("urban_mmh", 10.0) / 1000 / 3600
+    rate[low & np.isin(names, ["paddy", "field", "paddy_dam", "green"])] = spec.get("agri_mmh", 2.0) / 1000 / 3600
+    return rate, meta["drain_target_k"]

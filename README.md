@@ -20,12 +20,15 @@ rri_sim/
   assets.py       e-Stat メッシュ統計から資産基礎数量
   scenarios.py    浚渫・堤防嵩上げ・遊水地・土地利用変更
   metrics.py      NSE, KGE, ピーク誤差, CSI 等
-  workflow.py     流域構築＋校正済みパラメータのプリセット（キャッシュ付き）
+  workflow.py     流域構築＋プリセット＋境界条件（ダム・潮位・低平地排水）
+  levees.py       DEM5A（5 m）からの既設堤防天端・堤間幅の推定
+  indicators.py   Livability / Ecology / 安全・安心 指標
+  costs.py        施策の事業費（初期・維持・現在価値）
   gui/            3D GUI（FastAPI + three.js）: engine.py, server.py, static/
   data/           gsi_dem, mlit_water, jma, landuse, estat（キャッシュ付き取得）
 scripts/          run_event.py, calibrate.py, damage_from_result.py, compare_schemes_levee.py
 tests/            検証テスト（解析解・V字流域・保存性・被害率）
-docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI
+docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI / 06 指標・事業費
 ```
 
 ## 3D GUI（施策を塗って洪水計算・被害額を比較）
@@ -34,8 +37,9 @@ docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進�
 .venv/bin/python -m rri_sim.gui      # → http://127.0.0.1:8765
 ```
 
-森林化・田んぼダム・住宅移転/嵩上げ・堤防・遊水地を地図上で塗り、洪水計算を実行して
-浸水深の時間変化と被害額（現況比）を3Dで確認できる。詳細は [docs/05_gui.md](docs/05_gui.md)。
+森林化・田んぼダム・住宅移転/嵩上げ・堤防・遊水地を地図上（3D／2D）で塗り、洪水計算を実行して、
+浸水深の時間変化、全観測所の流量、被害額、**事業費**、**Livability / Ecology Score**（都市構造の評価に関するハンドブック準拠の指標）を
+現況と比較できる。対象: 玖珠川、阿武隈川上流、**筑後川全域**、**阿武隈川全域**。詳細は [docs/05_gui.md](docs/05_gui.md)、[docs/06_indicators.md](docs/06_indicators.md)。
 
 ![GUI](docs/figures/gui_damage.png)
 

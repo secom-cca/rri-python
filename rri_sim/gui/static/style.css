@@ -78,3 +78,5 @@ table.ind tr.total td { font-weight: 700; border-top: 1px solid var(--line); }
 .qchart .t { font-size: 11.5px; font-weight: 600; display: flex; justify-content: space-between; }
 #kpis { display: block; }
 .tools.ops button.active, .tools.measures button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.note { color: var(--danger); font-size: 11.5px; margin-top: 4px; }

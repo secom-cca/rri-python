@@ -32,6 +32,9 @@ class BasinConfig:
     burn_prefs: tuple = ()
     burn_system: str | None = None
     burn_depth: float = 20.0
+    # open (sea) boundary for basin cells bordering the sea below this ground elevation
+    coast_max_elev_m: float = 10.0
+    coast_slope: float = 1e-3
     gauges: dict = field(default_factory=dict)    # name -> (lon, lat)
 
 
@@ -154,8 +157,17 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     d = Domain(z=np.where(mask, z_model, np.nan), mask=mask, dx=cfg.res, dy=cfg.res,
                landclass=lc.astype(np.int64), params=params, river=river,
                transform=tf_c, crs=crs)
+    # coastal cells: the basin borders the sea (no DEM data = sea).  Low-lying
+    # coastal land drains to the sea through sluices, so these cells get an
+    # outflow-only open boundary (normal depth with a gentle slope).
+    from scipy.ndimage import binary_dilation
+    sea = ~valid[r_a:r_b, c_a:c_b]
+    coast = mask & binary_dilation(sea) & (np.nan_to_num(z_model, nan=1e9) < cfg.coast_max_elev_m)
+    if coast.any():
+        d.open_boundary = np.where(coast, cfg.coast_slope, 0.0)
     meta = {"outlet_rc": (int(ro - r_a), int(co - c_a)), "area_km2": float(area),
             "z_raw": np.where(mask, z, np.nan),
+            "coast_cells": int(coast.sum()),
             "hand": height_above_nearest_drainage(z_model, fd, _river_mask(river, z.shape), mask),
             "landuse_fraction": frac, "acc_km2": acc_ws, "fdir": fd}
     # gauge river indices

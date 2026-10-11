@@ -46,6 +46,13 @@ BASINS = {
                           "瀬ノ下": "309061289901190"},
         stage_gauges={},
         prefs=(40, 41, 43, 44), prefecture="福岡",
+        existing_levees={"source": "DEM5A", "min_area_km2": 30.0},
+        # 低平地の排水（排水機場・下水道・クリーク）: assumption, see docs/04 4b
+        lowland_drainage={"urban_mmh": 10.0, "agri_mmh": 2.0, "hand_max_m": 5.0},
+        lowland_river_n={1e-3: 0.030, 2e-4: 0.025},   # bed slope < key -> Manning n
+        gui_note=("注意: 本川の流量・水位は観測と整合（荒瀬・片ノ瀬・瀬ノ下 NSE 0.86–0.96）するが、"
+                  "低平地の浸水（約410 km²）と被害額は過大。感潮区間の堤防天端（DEM推定）と排水機場・クリークの"
+                  "表現が不十分なため。施策間の相対比較に用いること（docs/04 4b）。"),
         tide_gauge="309061289901250",            # 若津 (water level, zero T.P. -1.94 m)
         # flood-control dams: (lon, lat), flood storage [m3], cut-off discharge [m3/s]
         dams={"下筌ダム": dict(lonlat=(130.98528, 33.15944), capacity=51.3e6, q_cut=350.0,
@@ -72,6 +79,11 @@ BASINS = {
                           "江尻": "302011282206060"},
         stage_gauges={},
         prefs=(7, 4), prefecture="福島",
+        existing_levees={"source": "DEM5A", "min_area_km2": 30.0},
+        lowland_drainage={"urban_mmh": 10.0, "agri_mmh": 2.0, "hand_max_m": 5.0},
+        lowland_river_n={1e-3: 0.030, 2e-4: 0.025},
+        gui_note=("注意: パラメータ未校正のため流量が系統的に過小（総量 −18〜−33%）。既設堤防はDEMからの推定。"
+                  "施策間の相対比較に用いること（docs/04 4b）。"),
         tide_gauge="302011282206020",            # 荒浜 (zero T.P. -0.152 m)
         dams={"三春ダム": dict(lonlat=(140.46806, 37.40722), capacity=20.0e6, q_cut=100.0,
                              source="計画最大放流量100 m3/s (国交省事例集); 洪水調節容量は推定"),

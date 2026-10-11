@@ -71,12 +71,14 @@ class Simulation:
     def __init__(self, domain: Domain, rainfall: Rainfall | None = None,
                  inflows: dict[int, Hydrograph] | None = None,
                  h0=None, hr0=None, dams: list[Dam] | None = None,
-                 stage_bc: dict | None = None):
-        """stage_bc: {outlet river index: (times_s, water level T.P. [m])} tidal boundary."""
+                 stage_bc: dict | None = None, drainage: tuple | None = None):
+        """stage_bc: {outlet river index: (times_s, water level T.P. [m])} tidal boundary.
+        drainage: (rate [m/s] per cell, target river index per cell) lowland pumping."""
         self.d = domain
         self.rain = rainfall
         self.inflows = inflows or {}
         self.stage_bc = stage_bc or {}
+        self.drain_rate, self.drain_k = drainage if drainage is not None else (None, None)
         nr_ = 0 if domain.river is None else domain.river.n
         self.bc_stage = np.full(nr_, np.nan)
         self.dams = list(dams or [])
@@ -177,6 +179,9 @@ class Simulation:
         mb.boundary_outflow += self._apply_slope(self.h, self.mask, self.fx, self.fy,
                                                     self.fb, self.qsx, self.qsy,
                                                     d.dx, d.dy, dt)
+        if self.drain_rate is not None and r is not None and r.n:
+            K.lowland_drainage(self.h, self.mask, self.da, self.sd, self.drain_rate, self.drain_k,
+                               r.width, r.length, self.hr, d.dx, d.dy, dt)
         if self.has_retention:
             K.retained_release(self.h, self.z, self.mask, self.da, self.sd, self.leak,
                                d.dx, d.dy, dt)

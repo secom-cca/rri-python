@@ -164,3 +164,38 @@ def height_above_nearest_drainage(z: np.ndarray, fdir: np.ndarray, is_river: np.
                 drain_z[i, j] = z[i, j]
     hand[mask] = (z - drain_z)[mask]
     return hand
+
+
+def drain_target(fdir: np.ndarray, is_river: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Flat grid index of the first river cell reached by following D8
+    directions from each cell (-1 if none)."""
+    ny, nx = fdir.shape
+    tgt = np.full((ny, nx), -2, dtype=np.int64)       # -2 = unknown
+    for i in range(ny):
+        for j in range(nx):
+            if not mask[i, j] or tgt[i, j] != -2:
+                continue
+            path = []
+            a, b = i, j
+            while True:
+                if is_river[a, b]:
+                    t = a * nx + b
+                    break
+                if tgt[a, b] != -2:
+                    t = tgt[a, b]
+                    break
+                path.append((a, b))
+                k = fdir[a, b]
+                if k < 0:
+                    t = -1
+                    break
+                a, b = a + D8_DI[k], b + D8_DJ[k]
+                if not (0 <= a < ny and 0 <= b < nx) or not mask[a, b]:
+                    t = -1
+                    break
+            for (p, q) in path:
+                tgt[p, q] = t
+            if is_river[i, j]:
+                tgt[i, j] = i * nx + j
+    tgt[tgt == -2] = -1
+    return tgt

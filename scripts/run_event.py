@@ -14,7 +14,7 @@ from rri_sim import metrics, viz
 from rri_sim.cases import BASINS, EVENTS
 from rri_sim.data import ROOT, mlit_water
 from rri_sim.events import basin_mean_series, collect_gauges, gridded_rainfall
-from rri_sim.workflow import apply_overrides, boundary_conditions, build, PRESETS  # noqa: F401
+from rri_sim.workflow import apply_overrides, boundary_conditions, build, drainage_arrays, PRESETS  # noqa: F401
 from rri_sim.solver import Simulation
 
 
@@ -30,7 +30,7 @@ def run_event(event_key, tag="base", sets=None, threshold=None, save=True, verbo
     rain, fields = gridded_rainfall(d, data, stations, T0)
     bm = basin_mean_series(fields, d.mask)
     dams, stage_bc, bc_info = boundary_conditions(ev.basin, d, meta, T0, ev.end)
-    sim = Simulation(d, rain, dams=dams, stage_bc=stage_bc)
+    sim = Simulation(d, rain, dams=dams, stage_bc=stage_bc, drainage=drainage_arrays(ev.basin, d, meta))
     t_end = (pd.Timestamp(ev.end) - T0).total_seconds()
     t = time.time()
     res = sim.run(t_end, gauges=meta["gauge_index"], output_interval=3600.0)

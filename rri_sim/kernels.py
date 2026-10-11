@@ -540,3 +540,26 @@ green_ampt = njit(cache=True, nogil=True)(_green_ampt_py)
 slope_fluxes_par = njit(cache=False, nogil=True, parallel=True)(_slope_fluxes_py)
 apply_slope_fluxes_par = njit(cache=False, nogil=True, parallel=True)(_apply_slope_fluxes_py)
 green_ampt_par = njit(cache=False, nogil=True, parallel=True)(_green_ampt_py)
+
+
+@njit(cache=True, nogil=True)
+def lowland_drainage(h, mask, da, sd, rate, target_k, width, length, hr, dx, dy, dt):
+    """排水機場・下水道・クリーク: surface water of cells with rate > 0 is pumped
+    to the river cell they drain to (target_k >= 0) at most `rate` [m/s].
+    Works also when the river is high (pumps).  Returns pumped volume [m3]."""
+    ny, nx = h.shape
+    area = dx * dy
+    tot = 0.0
+    for i in range(ny):
+        for j in range(nx):
+            k = target_k[i, j]
+            if not mask[i, j] or rate[i, j] <= 0.0 or k < 0:
+                continue
+            hs = h[i, j] - da[i, j] - sd[i, j]
+            if hs <= 0.0:
+                continue
+            dh = min(hs, rate[i, j] * dt)
+            h[i, j] -= dh
+            hr[k] += dh * area / (width[k] * length[k])
+            tot += dh * area
+    return tot
