@@ -26,31 +26,35 @@
     </section>
 
     <section>
-      <h2>施策ツール</h2>
-      <div id="tools" class="tools">
+      <h2>操作</h2>
+      <div class="tools ops" id="ops">
         <button data-tool="view" class="active" title="ドラッグで視点回転、右ドラッグで移動、ホイールで拡大">🖐 視点</button>
+        <button data-tool="erase" title="塗った範囲の施策を取り消す">⌫ 消去</button>
+      </div>
+      <h2>施策</h2>
+      <div class="tools measures" id="tools">
         <button data-tool="forest" title="土地利用を森林に変更">🌲 森林化</button>
         <button data-tool="paddy_dam" title="水田セルに田んぼダム（排水調整板）を設置">🌾 田んぼダム</button>
-        <button data-tool="relocate" title="住宅・事業所を浸水域外へ移転（資産を除去）">🏠→ 移転</button>
+        <button data-tool="relocate" title="住宅・事業所を浸水域外の安全な市街地へ移転">🏠 移転</button>
         <button data-tool="raise" title="住宅の嵩上げ（床高）／盛土">⬆ 嵩上げ</button>
         <button data-tool="levee" title="範囲内の河道に堤防を設置">🧱 堤防</button>
         <button data-tool="retention" title="遊水地：掘削＋越流堤">◯ 遊水地</button>
-        <button data-tool="erase" title="塗った範囲の施策を取り消す">⌫ 消去</button>
       </div>
       <label>ブラシ半径 <input id="brush" type="range" min="0" max="8" value="2"> <span id="brush-v">2</span> セル</label>
       <div id="tool-params">
-        <div data-for="raise"><label>嵩上げ高 <input id="raise-h" type="number" value="1.0" step="0.5" min="0.5" max="5"> m</label>
-          <label class="chk"><input id="raise-terrain" type="checkbox"> 盛土（地盤ごと上げ、流れにも影響）</label></div>
-        <div data-for="levee"><label>堤防高（地盤から） <input id="levee-h" type="number" value="3.0" step="0.5" min="0.5" max="15"> m</label></div>
-        <div data-for="retention"><label>掘削深 <input id="ret-d" type="number" value="3.0" step="0.5" min="0.5" max="10"> m</label>
-          <label>越流堤の高さ <input id="ret-inlet" type="number" value="1.5" step="0.5" min="0" max="10"> m</label></div>
         <div data-for="forest"><label>新規森林の粗度 n <input id="fo-n" type="number" value="0.4" step="0.05" min="0.05" max="1"></label>
           <label>森林土層厚 <input id="fo-soil" type="number" value="1.0" step="0.1" min="0.2" max="3"> m</label>
           <div class="hint">既存の森林・水域は対象外。校正済み山地森林とは別クラスとして計算。</div></div>
         <div data-for="paddy_dam"><label>貯留深 <input id="pd-store" type="number" value="15" step="1" min="1" max="30"> cm</label>
           <label>最大放流量 <input id="pd-rel" type="number" value="5" step="0.5" min="0.5" max="50"> mm/h</label></div>
+        <div data-for="relocate"><div class="hint">世帯・事業所を最寄りの安全な市街地（HAND&gt;10 m かつ現況で浸水なし）へ移し、跡地は緑地化。</div></div>
+        <div data-for="raise"><label>嵩上げ高 <input id="raise-h" type="number" value="1.0" step="0.5" min="0.5" max="5"> m</label>
+          <label class="chk"><input id="raise-terrain" type="checkbox"> 盛土（地盤ごと上げ、流れにも影響）</label></div>
+        <div data-for="levee"><label>堤防高（地盤から） <input id="levee-h" type="number" value="3.0" step="0.5" min="0.5" max="15"> m</label></div>
+        <div data-for="retention"><label>掘削深 <input id="ret-d" type="number" value="3.0" step="0.5" min="0.5" max="10"> m</label>
+          <label>越流堤の高さ <input id="ret-inlet" type="number" value="1.5" step="0.5" min="0" max="10"> m</label></div>
       </div>
-      <div class="hint" id="tool-hint">「視点」でドラッグ＝回転。施策ツール選択中は左ドラッグで塗る（右ドラッグ＝移動）。</div>
+      <div class="hint" id="tool-hint">「視点」でドラッグ＝回転。施策選択中は左ドラッグで塗る（3D・2D地図どちらでも可、右ドラッグ＝移動）。</div>
     </section>
 
     <section>
@@ -69,7 +73,8 @@
         <button data-mode="landuse" class="active">土地利用</button>
         <button data-mode="flood">浸水深</button>
         <button data-mode="damage">被害額</button>
-        <button data-mode="diff">差分（施策−現況）</button>
+        <button data-mode="diff">差分</button>
+        <button data-mode="population">人口</button>
       </div>
       <div class="tools" id="which">
         <button data-which="base">現況</button>
@@ -78,11 +83,13 @@
       <label>鉛直強調 <input id="exag" type="range" min="1" max="6" step="0.5" value="2.5"> <span id="exag-v">2.5</span>×</label>
       <label class="chk"><input id="show-assets" type="checkbox" checked> 資産（世帯）を表示</label>
       <label class="chk"><input id="show-river" type="checkbox" checked> 河道・堤防を表示</label>
+      <label class="chk"><input id="show-fac" type="checkbox"> 生活サービス施設を表示（2D地図）</label>
     </section>
   </aside>
 
   <main id="view">
     <div id="legend"></div>
+    <div id="minimap-wrap"><canvas id="minimap"></canvas><div id="minimap-title">2D地図（クリックで移動・施策ツールで塗る）</div></div>
     <div id="hover"></div>
     <div id="timebar">
       <button id="play">▶</button>
@@ -93,16 +100,34 @@
   </main>
 
   <aside id="right">
-    <section>
+    <div class="tabs" id="tabs">
+      <button data-tab="damage" class="active">被害・費用</button>
+      <button data-tab="indic">指標</button>
+      <button data-tab="flow">流量</button>
+      <button data-tab="log">ログ</button>
+    </div>
+    <section data-panel="damage" class="panel show">
       <h2>被害額（治水経済調査マニュアル準拠）</h2>
       <div id="kpis"></div>
-      <canvas id="dmg-chart" height="190"></canvas>
+      <canvas id="dmg-chart" height="170"></canvas>
+      <h2>事業費 <button id="edit-costs" class="small">単価設定</button></h2>
+      <div id="costs"></div>
+      <div id="unit-costs" class="unit-costs"></div>
     </section>
-    <section>
-      <h2>流量ハイドログラフ <select id="gauge"></select></h2>
-      <canvas id="q-chart" height="210"></canvas>
+    <section data-panel="indic" class="panel">
+      <h2>Livability Score（生活利便性）</h2>
+      <div id="liv"></div>
+      <h2>Ecology Score（生態系）</h2>
+      <div id="eco"></div>
+      <h2>安全・安心（参考）</h2>
+      <div id="safety"></div>
+      <div class="hint">指標の定義: 国土交通省「都市構造の評価に関するハンドブック」(2014) の生活利便性・安全安心指標を参考に算定（docs/06_indicators.md）。</div>
     </section>
-    <section>
+    <section data-panel="flow" class="panel">
+      <h2>流量ハイドログラフ（全観測所）</h2>
+      <div id="q-charts"></div>
+    </section>
+    <section data-panel="log" class="panel">
       <h2>計算ログ</h2>
       <div id="log" class="log"></div>
     </section>

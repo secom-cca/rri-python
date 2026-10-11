@@ -123,3 +123,18 @@ def site_info(station_id: str) -> dict:
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
     return info
+
+
+def gauge_zero_tp(station_id: str) -> float | None:
+    """Latest gauge datum (零点高) [m, T.P.] from the station page (cached)."""
+    import json
+    cache = RAW / "mlit_water" / f"zero_{station_id}.json"
+    if cache.exists():
+        return json.loads(cache.read_text())["zero"]
+    html = http_get(f"{BASE}/cgi-bin/SiteInfo.exe?ID={station_id}").content.decode("euc-jp", "replace")
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    m = re.search(r"最新の零点高 T\.P\. ?(-?[\d.]+)m", text)
+    z = float(m.group(1)) if m else None
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"zero": z}))
+    return z

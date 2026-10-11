@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from numba import njit
+from numba import njit, prange
 
 G = 9.80665
 
@@ -136,18 +136,20 @@ def slope_face(Ha, Hb, za, zb, ha, hb, na, nb, kaa, kab, daa, dab, dma, dmb, ba,
     return Q, qs, c, dts
 
 
-@njit(cache=True, nogil=True)
-def slope_fluxes(h, z, mask, n, ka, da, dm, beta, sd, bnd_slope, dx, dy, dt, inertial,
+def _slope_fluxes_py(h, z, mask, n, ka, da, dm, beta, sd, bnd_slope, dx, dy, dt, inertial,
                  lim_frac, h_dry, fx, fy, fb, qsx, qsy):
     """Face discharges [m^3/s]: fx east faces (ny, nx-1), fy south faces
     (ny-1, nx), fb open-boundary outflow (ny, nx).  qsx/qsy hold the surface
-    unit-width flux (state of the inertial scheme).
+    unit-width flux (state of the inertial scheme).  Rows are processed in
+    parallel; every face is written by exactly one thread.
     Returns (max celerity, min diffusive stability time)."""
     ny, nx = h.shape
     area = dx * dy
-    cmax = 0.0
-    dtsmin = np.inf
-    for i in range(ny):
+    row_c = np.zeros(ny)
+    row_t = np.full(ny, np.inf)
+    for i in prange(ny):
+        cmax = 0.0
+        dtsmin = np.inf
         for j in range(nx - 1):
             fx[i, j] = 0.0
             if not (mask[i, j] and mask[i, j + 1]):
@@ -162,104 +164,101 @@ def slope_fluxes(h, z, mask, n, ka, da, dm, beta, sd, bnd_slope, dx, dy, dt, ine
             qsx[i, j] = qs
             cmax = max(cmax, c)
             dtsmin = min(dtsmin, dts)
-    for i in range(ny - 1):
-        for j in range(nx):
-            fy[i, j] = 0.0
-            if not (mask[i, j] and mask[i + 1, j]):
-                qsy[i, j] = 0.0
-                continue
-            Q, qs, c, dts = slope_face(
-                z[i, j] + h[i, j], z[i + 1, j] + h[i + 1, j], z[i, j], z[i + 1, j],
-                h[i, j], h[i + 1, j], n[i, j], n[i + 1, j], ka[i, j], ka[i + 1, j],
-                da[i, j], da[i + 1, j], dm[i, j], dm[i + 1, j], beta[i, j], beta[i + 1, j],
-                sd[i, j], sd[i + 1, j], dy, dx, area, dt, inertial, qsy[i, j], lim_frac, h_dry)
-            fy[i, j] = Q
-            qsy[i, j] = qs
-            cmax = max(cmax, c)
-            dtsmin = min(dtsmin, dts)
-    # open boundary: normal-depth outflow with a prescribed slope
-    for i in range(ny):
+        if i < ny - 1:
+            for j in range(nx):
+                fy[i, j] = 0.0
+                if not (mask[i, j] and mask[i + 1, j]):
+                    qsy[i, j] = 0.0
+                    continue
+                Q, qs, c, dts = slope_face(
+                    z[i, j] + h[i, j], z[i + 1, j] + h[i + 1, j], z[i, j], z[i + 1, j],
+                    h[i, j], h[i + 1, j], n[i, j], n[i + 1, j], ka[i, j], ka[i + 1, j],
+                    da[i, j], da[i + 1, j], dm[i, j], dm[i + 1, j], beta[i, j], beta[i + 1, j],
+                    sd[i, j], sd[i + 1, j], dy, dx, area, dt, inertial, qsy[i, j], lim_frac, h_dry)
+                fy[i, j] = Q
+                qsy[i, j] = qs
+                cmax = max(cmax, c)
+                dtsmin = min(dtsmin, dts)
         for j in range(nx):
             fb[i, j] = 0.0
             if mask[i, j] and bnd_slope[i, j] > 0.0 and h[i, j] > 0.0:
                 fb[i, j] = slope_discharge(h[i, j], bnd_slope[i, j], n[i, j], ka[i, j],
                                            da[i, j], dm[i, j], beta[i, j]) * dx
-    return cmax, dtsmin
+        row_c[i] = cmax
+        row_t[i] = dtsmin
+    return row_c.max(), row_t.min()
 
 
-@njit(cache=True, nogil=True)
-def apply_slope_fluxes(h, mask, fx, fy, fb, qsx, qsy, dx, dy, dt):
-    """Positivity-limited, conservative update of slope storage.
-    Returns outflow volume through the open boundary [m^3]."""
+def _apply_slope_fluxes_py(h, mask, fx, fy, fb, qsx, qsy, dx, dy, dt):
+    """Positivity-limited, conservative update of slope storage (gather form,
+    parallel over rows).  Returns outflow volume through the open boundary [m^3]."""
     ny, nx = h.shape
     area = dx * dy
-    out = np.zeros((ny, nx))
-    for i in range(ny):
-        for j in range(nx - 1):
-            q = fx[i, j]
-            if q > 0:
-                out[i, j] += q * dt
-            elif q < 0:
-                out[i, j + 1] -= q * dt
-    for i in range(ny - 1):
-        for j in range(nx):
-            q = fy[i, j]
-            if q > 0:
-                out[i, j] += q * dt
-            elif q < 0:
-                out[i + 1, j] -= q * dt
-    for i in range(ny):
-        for j in range(nx):
-            out[i, j] += fb[i, j] * dt
     r = np.ones((ny, nx))
-    for i in range(ny):
+    # 1) outflow volume of each cell from its own faces, scale factor
+    for i in prange(ny):
         for j in range(nx):
-            if out[i, j] > 0.0:
+            o = fb[i, j]
+            if j < nx - 1 and fx[i, j] > 0:
+                o += fx[i, j]
+            if j > 0 and fx[i, j - 1] < 0:
+                o -= fx[i, j - 1]
+            if i < ny - 1 and fy[i, j] > 0:
+                o += fy[i, j]
+            if i > 0 and fy[i - 1, j] < 0:
+                o -= fy[i - 1, j]
+            o *= dt
+            if o > 0.0:
                 avail = h[i, j] * area
-                if out[i, j] > avail:
-                    r[i, j] = avail / out[i, j]
-    dV = np.zeros((ny, nx))
-    for i in range(ny):
+                if o > avail:
+                    r[i, j] = avail / o
+    # 2) scale each face by its donor's factor
+    for i in prange(ny):
         for j in range(nx - 1):
-            q = fx[i, j]
-            f = r[i, j] if q > 0 else r[i, j + 1]
-            q *= f
+            f = r[i, j] if fx[i, j] > 0 else r[i, j + 1]
+            fx[i, j] *= f
             qsx[i, j] *= f
-            fx[i, j] = q
-            dV[i, j] -= q * dt
-            dV[i, j + 1] += q * dt
-    for i in range(ny - 1):
-        for j in range(nx):
-            q = fy[i, j]
-            f = r[i, j] if q > 0 else r[i + 1, j]
-            q *= f
-            qsy[i, j] *= f
-            fy[i, j] = q
-            dV[i, j] -= q * dt
-            dV[i + 1, j] += q * dt
-    vout = 0.0
-    for i in range(ny):
+        if i < ny - 1:
+            for j in range(nx):
+                f = r[i, j] if fy[i, j] > 0 else r[i + 1, j]
+                fy[i, j] *= f
+                qsy[i, j] *= f
         for j in range(nx):
             fb[i, j] *= r[i, j]
-            dV[i, j] -= fb[i, j] * dt
-            vout += fb[i, j] * dt
-    for i in range(ny):
+    # 3) gather net volume change
+    row_out = np.zeros(ny)
+    for i in prange(ny):
+        vo = 0.0
         for j in range(nx):
-            if mask[i, j]:
-                h[i, j] = max(h[i, j] + dV[i, j] / area, 0.0)
-    return vout
+            if not mask[i, j]:
+                continue
+            dV = -fb[i, j]
+            vo += fb[i, j]
+            if j < nx - 1:
+                dV -= fx[i, j]
+            if j > 0:
+                dV += fx[i, j - 1]
+            if i < ny - 1:
+                dV -= fy[i, j]
+            if i > 0:
+                dV += fy[i - 1, j]
+            h[i, j] = max(h[i, j] + dV * dt / area, 0.0)
+        row_out[i] = vo * dt
+    return row_out.sum()
 
 
 # ---------------------------------------------------------------- river physics
 @njit(cache=True, nogil=True)
 def river_fluxes(hr, zb, width, length, nr, dn, outlet_slope, dt, inertial, lim_frac,
-                 h_dry, Q):
+                 h_dry, Q, bc_stage):
     """Discharge from each river cell to its downstream cell [m^3/s]
     (negative = backwater flow upstream), rectangular section.
       diffusive : Q = sign (1/n) A R^{2/3} |dH/dx|^{1/2}            (RRI)
       inertial  : Q+ + (g n^2 dt / (A R^{4/3})) |Q+| Q+ = Q + g A dt dH/dx
     Q holds the previous discharge on entry (inertial state).
-    Outlet cells: normal depth with outlet_slope.
+    Outlet cells: normal depth with outlet_slope, or - if bc_stage[k] is
+    finite - a prescribed downstream water level (tide) in a ghost cell one
+    reach downstream; flow may then reverse (sea -> river).
     Returns (max celerity, min diffusive stability time)."""
     nriv = hr.shape[0]
     cmax = 0.0
@@ -305,6 +304,27 @@ def river_fluxes(hr, zb, width, length, nr, dn, outlet_slope, dt, inertial, lim_
             u = abs(q) / A
             cmax = max(cmax, u + math.sqrt(G * hf), 5.0 / 3.0 * u)
             Q[k] = q
+        elif np.isfinite(bc_stage[k]):
+            # tidal / stage boundary: ghost cell one reach downstream
+            Ha = zb[k] + hr[k]
+            zg = zb[k] - outlet_slope[k] * length[k]
+            Hb = max(bc_stage[k], zg)
+            dH = Ha - Hb
+            hf = max(Ha, Hb) - zb[k]
+            if dH < 0.0:
+                hf = min(hf, Hb - zg)
+            else:
+                hf = min(hf, hr[k])
+            if hf <= h_dry:
+                continue
+            w = width[k]
+            A = w * hf
+            R = A / (w + 2.0 * hf)
+            q = implicit_friction(q_old + G * A * dt * dH / length[k],
+                                  G * nr[k] ** 2 * dt / (A * R ** (4.0 / 3.0)))
+            u = abs(q) / A
+            cmax = max(cmax, u + math.sqrt(G * hf), 5.0 / 3.0 * u)
+            Q[k] = q
         else:
             h = hr[k]
             if h <= h_dry:
@@ -321,14 +341,15 @@ def river_fluxes(hr, zb, width, length, nr, dn, outlet_slope, dt, inertial, lim_
 
 @njit(cache=True, nogil=True)
 def apply_river_fluxes(hr, width, length, dn, Q, dt):
-    """Positivity-limited river update.  Returns outlet outflow volume [m^3]."""
+    """Positivity-limited river update.  Returns net outlet outflow volume [m^3]
+    (negative when a stage boundary pushes water into the river)."""
     nriv = hr.shape[0]
     out = np.zeros(nriv)
     for k in range(nriv):
         q = Q[k]
         if q > 0:
             out[k] += q * dt
-        elif q < 0:
+        elif q < 0 and dn[k] >= 0:
             out[dn[k]] -= q * dt
     r = np.ones(nriv)
     for k in range(nriv):
@@ -343,7 +364,7 @@ def apply_river_fluxes(hr, width, length, dn, Q, dt):
         d = dn[k]
         if q > 0:
             q *= r[k]
-        elif q < 0:
+        elif q < 0 and d >= 0:
             q *= r[d]
         Q[k] = q
         dV[k] -= q * dt
@@ -356,7 +377,6 @@ def apply_river_fluxes(hr, width, length, dn, Q, dt):
     return vout
 
 
-# ---------------------------------------------------- river <-> slope exchange
 @njit(cache=True, inline="always")
 def honda_unit(h1, h2, mu1, mu2):
     """Honda (本間) overflow formula, unit-width discharge [m^2/s].
@@ -429,8 +449,7 @@ def river_slope_exchange(h, z, da, sd, ri, rj, hr, zb, width, length, embank,
 
 
 # --------------------------------------------------------------- infiltration
-@njit(cache=True, nogil=True)
-def green_ampt(h, F, mask, da, kv, phi_theta, sf, limit, dt):
+def _green_ampt_py(h, F, mask, da, kv, phi_theta, sf, limit, dt):
     """Green-Ampt vertical infiltration removing surface water to a loss store F.
 
         f = kv * (1 + (phi - theta_i) * S_f / F)
@@ -443,7 +462,7 @@ def green_ampt(h, F, mask, da, kv, phi_theta, sf, limit, dt):
     Applies only to the surface water (h - d_a).  Returns sum of depths [m]."""
     ny, nx = h.shape
     tot = 0.0
-    for i in range(ny):
+    for i in prange(ny):
         for j in range(nx):
             if not mask[i, j] or kv[i, j] <= 0.0:
                 continue
@@ -511,3 +530,13 @@ def retained_release(h, z, mask, da, sd, leak, dx, dy, dt):
     for i in range(ny):
         for j in range(nx):
             h[i, j] += dV[i, j]
+
+
+# serial and parallel builds of the cell kernels; the solver picks one by grid size
+# (thread start-up dominates on small grids)
+slope_fluxes = njit(cache=True, nogil=True)(_slope_fluxes_py)
+apply_slope_fluxes = njit(cache=True, nogil=True)(_apply_slope_fluxes_py)
+green_ampt = njit(cache=True, nogil=True)(_green_ampt_py)
+slope_fluxes_par = njit(cache=False, nogil=True, parallel=True)(_slope_fluxes_py)
+apply_slope_fluxes_par = njit(cache=False, nogil=True, parallel=True)(_apply_slope_fluxes_py)
+green_ampt_par = njit(cache=False, nogil=True, parallel=True)(_green_ampt_py)

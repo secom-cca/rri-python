@@ -21,8 +21,9 @@ def http_get(url, timeout=60, retries=4, headers=None):
             r = requests.get(url, timeout=timeout, headers=headers or {"User-Agent": "Mozilla/5.0"})
             if r.status_code >= 500:
                 raise requests.HTTPError(f"{r.status_code}")
+            _ = r.content                     # force full download inside the retry loop
             return r
-        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as e:
+        except requests.RequestException as e:   # timeouts, broken/incomplete transfers, 5xx
             last = e
             time.sleep(2 ** k * 2)
     raise last

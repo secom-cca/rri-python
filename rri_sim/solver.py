@@ -70,10 +70,15 @@ class Results:
 class Simulation:
     def __init__(self, domain: Domain, rainfall: Rainfall | None = None,
                  inflows: dict[int, Hydrograph] | None = None,
-                 h0=None, hr0=None, dams: list[Dam] | None = None):
+                 h0=None, hr0=None, dams: list[Dam] | None = None,
+                 stage_bc: dict | None = None):
+        """stage_bc: {outlet river index: (times_s, water level T.P. [m])} tidal boundary."""
         self.d = domain
         self.rain = rainfall
         self.inflows = inflows or {}
+        self.stage_bc = stage_bc or {}
+        nr_ = 0 if domain.river is None else domain.river.n
+        self.bc_stage = np.full(nr_, np.nan)
         self.dams = list(dams or [])
         self.dam_S = np.array([dm.storage0 for dm in self.dams], float)
         self.dam_qin = np.zeros(len(self.dams))
@@ -119,6 +124,11 @@ class Simulation:
         self.leak = arr("leak_rate")
         self.z = np.where(d.mask, d.z, 0.0)
         self.mask = d.mask.astype(np.bool_)
+        # parallel cell kernels pay off above ~8k cells (thread start-up cost)
+        big = d.mask.size > 8000
+        self._slope_fluxes = K.slope_fluxes_par if big else K.slope_fluxes
+        self._apply_slope = K.apply_slope_fluxes_par if big else K.apply_slope_fluxes
+        self._green_ampt = K.green_ampt_par if big else K.green_ampt
         self.has_retention = bool((self.leak > 0).any() and (self.sd > 0).any())
 
     STATE_FIELDS = ("h", "hr", "F", "qsx", "qsy", "Q", "dam_S")
@@ -155,16 +165,16 @@ class Simulation:
             self.h += depth
             mb.rain += float(depth.sum()) * d.cell_area
         # vertical infiltration (Green-Ampt)
-        inf = K.green_ampt(self.h, self.F, self.mask, self.da, self.kv, self.phi_theta,
+        inf = self._green_ampt(self.h, self.F, self.mask, self.da, self.kv, self.phi_theta,
                            self.sf, self.inf_limit, dt)
         mb.infiltration += inf * d.cell_area
         # 2D slope
         inertial = num.scheme == "inertial"
-        c_s, dts_s = K.slope_fluxes(self.h, self.z, self.mask, self.n, self.ka, self.da,
+        c_s, dts_s = self._slope_fluxes(self.h, self.z, self.mask, self.n, self.ka, self.da,
                                     self.dm, self.beta, self.sd, self.bnd_slope, d.dx, d.dy, dt,
                                     inertial, num.limiter_frac, num.h_dry,
                                     self.fx, self.fy, self.fb, self.qsx, self.qsy)
-        mb.boundary_outflow += K.apply_slope_fluxes(self.h, self.mask, self.fx, self.fy,
+        mb.boundary_outflow += self._apply_slope(self.h, self.mask, self.fx, self.fy,
                                                     self.fb, self.qsx, self.qsy,
                                                     d.dx, d.dy, dt)
         if self.has_retention:
@@ -177,9 +187,11 @@ class Simulation:
                 v = hyd.volume(self.t, self.t + dt)
                 self.hr[k] += v / (r.width[k] * r.length[k])
                 mb.inflow += v
+            for k, (tt, hh) in self.stage_bc.items():
+                self.bc_stage[k] = np.interp(self.t + 0.5 * dt, tt, hh)
             c_r, dts_r = K.river_fluxes(self.hr, r.zb, r.width, r.length, r.n_river, r.dn,
                                         r.outlet_slope, dt, inertial, num.limiter_frac,
-                                        num.h_dry, self.Q)
+                                        num.h_dry, self.Q, self.bc_stage)
             for dm in self.dams:          # dam link is controlled by the operation rule
                 self.Q[dm.k] = 0.0
             mb.river_outflow += K.apply_river_fluxes(self.hr, r.width, r.length, r.dn,

@@ -23,10 +23,15 @@ class BasinConfig:
     dem_zoom: int = 13
     river_threshold_km2: float = 5.0
     snap_radius_m: float = 1500.0
+    gauge_snap_m: float = 1500.0          # search radius for gauges / dams on the river network
     expected_area_km2: float | None = None
     # "fill": slope cells use the depression-filled DEM (RRI 'adem' convention;
     # removes spurious pits of the averaged DEM).  "none": raw averaged DEM.
     dem_conditioning: str = "fill"
+    # stream burning (国土数値情報 W05): prefectures and river (system) name, burn depth [m]
+    burn_prefs: tuple = ()
+    burn_system: str | None = None
+    burn_depth: float = 20.0
     gauges: dict = field(default_factory=dict)    # name -> (lon, lat)
 
 
@@ -88,7 +93,19 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     z_full, tf, crs = gsi_dem.dem_on_grid(lon0, lat0, lon1, lat1, cfg.crs, cfg.res, cfg.dem_zoom)
     valid = np.isfinite(z_full)
     zf = fill_depressions(np.where(valid, z_full, 0.0), valid)
-    fdir = d8_directions(zf, valid, cfg.res, cfg.res)
+    if cfg.burn_prefs:
+        from .data import ksj_river
+        codes = ksj_river.system_codes_by_name(cfg.burn_prefs, cfg.burn_system) if cfg.burn_system else None
+        lines = ksj_river.stream_lines(cfg.burn_prefs, codes)
+        streams = ksj_river.rasterize_lines(lines, tf, z_full.shape, crs) & valid
+        z_burn = np.where(streams, z_full - cfg.burn_depth, z_full)
+        zf_route = fill_depressions(np.where(valid, z_burn, 0.0), valid)
+        if verbose:
+            print(f"[{cfg.name}] stream burning: {len(lines)} lines, {streams.sum()} cells "
+                  f"(system {cfg.burn_system}: {sorted(codes) if codes else 'all'})")
+    else:
+        zf_route = zf
+    fdir = d8_directions(zf_route, valid, cfg.res, cfg.res)
     acc = flow_accumulation(fdir, valid, cfg.res ** 2) / 1e6
     # snap outlet to max accumulation within radius
     r0, c0, _, _ = lonlat_to_rc(*cfg.outlet_lonlat, tf, crs)
@@ -145,7 +162,18 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     g = {}
     for name, (lon, lat) in cfg.gauges.items():
         r, c, _, _ = lonlat_to_rc(lon, lat, tf_c, crs)
-        g[name] = snap_to_river(river, r, c, acc_ws, rad)
+        rad0 = max(1, int(round(cfg.gauge_snap_m / cfg.res)))
+        for rr in (rad0, 2 * rad0, 4 * rad0):
+            try:
+                g[name] = snap_to_river(river, r, c, acc_ws, rr)
+                if rr > rad0 and verbose:
+                    print(f"[{cfg.name}] gauge {name}: snapped with widened radius {rr} cells")
+                break
+            except ValueError:
+                continue
+        else:
+            import warnings
+            warnings.warn(f"[{cfg.name}] gauge {name} ({lon}, {lat}) is not near the river network; skipped")
     meta["gauge_index"] = g
     return d, meta
 

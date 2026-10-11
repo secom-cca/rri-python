@@ -91,13 +91,14 @@ def distribute_to_grid(values: dict, transform, shape, crs, weight=None):
     return out
 
 
-def households(first_meshes, transform, shape, crs, weight=None):
+def households(first_meshes, transform, shape, crs, weight=None, column="一般世帯数"):
+    """一般世帯数 (default) or another T001142 column, e.g. '人口（総数）'."""
     vals = {}
     for mesh in first_meshes:
         h0, h1, rows = _table("T001142", mesh)
         if not rows:
             continue
-        col = h1.index("一般世帯数")
+        col = h1.index(column)
         for r in rows:
             vals[r[0]] = vals.get(r[0], 0.0) + _num(r[col])
     return distribute_to_grid(vals, transform, shape, crs, weight)
@@ -115,3 +116,7 @@ def employees(first_meshes, transform, shape, crs, weight=None):
             for r in rows:
                 out[code][r[0]] = out[code].get(r[0], 0.0) + _num(r[name])
     return {c: distribute_to_grid(v, transform, shape, crs, weight) for c, v in out.items()}
+
+
+def population(first_meshes, transform, shape, crs, weight=None):
+    return households(first_meshes, transform, shape, crs, weight, column="人口（総数）")

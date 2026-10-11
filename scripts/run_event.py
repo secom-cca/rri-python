@@ -14,7 +14,7 @@ from rri_sim import metrics, viz
 from rri_sim.cases import BASINS, EVENTS
 from rri_sim.data import ROOT, mlit_water
 from rri_sim.events import basin_mean_series, collect_gauges, gridded_rainfall
-from rri_sim.workflow import apply_overrides, build  # noqa: F401  (re-exported)
+from rri_sim.workflow import apply_overrides, boundary_conditions, build, PRESETS  # noqa: F401
 from rri_sim.solver import Simulation
 
 
@@ -29,7 +29,8 @@ def run_event(event_key, tag="base", sets=None, threshold=None, save=True, verbo
                                     verbose=verbose)
     rain, fields = gridded_rainfall(d, data, stations, T0)
     bm = basin_mean_series(fields, d.mask)
-    sim = Simulation(d, rain)
+    dams, stage_bc, bc_info = boundary_conditions(ev.basin, d, meta, T0, ev.end)
+    sim = Simulation(d, rain, dams=dams, stage_bc=stage_bc)
     t_end = (pd.Timestamp(ev.end) - T0).total_seconds()
     t = time.time()
     res = sim.run(t_end, gauges=meta["gauge_index"], output_interval=3600.0)
@@ -48,7 +49,9 @@ def run_event(event_key, tag="base", sets=None, threshold=None, save=True, verbo
                "threshold": float(b["cfg"].river_threshold_km2),
                "cells": int(d.mask.sum()), "river_cells": d.river.n, "steps": res.n_steps,
                "wall_s": wall, "mass_rel_err": res.mass.relative_error,
-               "rain_eval_mm": float(np.nansum(rain_on_t[w])), "scores": scores}
+               "rain_eval_mm": float(np.nansum(rain_on_t[w])), "scores": scores,
+               "area_km2": meta["area_km2"], "boundary": bc_info,
+               "dam_max_storage_mcm": {dm.name: None for dm in dams}}
     if verbose:
         print(event_key, tag, {g: {k: round(v, 3) for k, v in s.items()} for g, s in scores.items()},
               f"wall={wall:.0f}s")
@@ -78,5 +81,10 @@ if __name__ == "__main__":
     ap.add_argument("--tag", default="base")
     ap.add_argument("--set", nargs="*")
     ap.add_argument("--threshold", type=float)
+    ap.add_argument("--preset", action="store_true", help="use workflow.PRESETS for the basin")
     a = ap.parse_args()
-    run_event(a.event, a.tag, a.set, a.threshold)
+    sets, thr = a.set, a.threshold
+    if a.preset:
+        p = PRESETS.get(EVENTS[a.event].basin, {})
+        sets, thr = (sets or []) + p.get("sets", []), thr or p.get("threshold")
+    run_event(a.event, a.tag, sets, thr)

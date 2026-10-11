@@ -36,3 +36,54 @@ def test_damage_hand_calculation():
 
 def test_floor_correction():
     assert np.allclose(D.floor_correction([1, 2.9, 3, 10]), [1, 1, 2 / 3, 0.2])
+
+
+def test_costs_levee_and_present_value():
+    from rri_sim import costs as C
+    r = C.estimate([{"type": "levee", "q": {"height_m": 2.0, "length_m": 1000.0}},
+                    {"type": "paddy_dam", "q": {"area_m2": 1e6}}])
+    u = C.default_unit_costs()
+    area = 2.0 * (u["levee_crest_m"] + u["levee_slope"] * 2.0)
+    foot = u["levee_crest_m"] + 2 * u["levee_slope"] * 2.0
+    lev = 1000 * (area * u["levee_fill_yen_m3"] + u["levee_fixed_yen_m"] + foot * u["land_yen_m2"])
+    assert np.isclose(r["items"][0]["initial_yen"], lev)
+    pdm = r["items"][1]
+    assert np.isclose(pdm["pv_yen"], 1000 * u["paddy_dam_init_yen_10a"] + 1000 * u["paddy_dam_annual_yen_10a"] * C.ANNUITY)
+    assert 21.4 < C.ANNUITY < 21.6     # 50 years at 4 %
+
+
+def test_indicators_respond_to_measures():
+    from rri_sim import indicators as I
+    from rri_sim.synthetic import valley_with_floodplain
+    d = valley_with_floodplain()
+    names = ["forest", "paddy", "field", "urban", "water"]
+    lc = d.landclass.copy()                      # 0 forest (hills), 1 paddy (plain)
+    lc[25:35, 18:23] = 3                          # town on the floodplain
+    road = np.zeros(d.shape); road[:, 19] = 0.3
+    pop = np.where(lc == 3, 300.0, 0.0)
+    fac = {"medical": np.array([30 * d.shape[1] + 20]), "school": np.array([28 * d.shape[1] + 19]),
+           "commercial": np.array([30 * d.shape[1] + 21]), "public": np.array([5 * d.shape[1] + 20])}
+    L = I.livability(pop, lc, names, road, fac, d.dx, d.dy, d.mask, flood_depth=np.zeros(d.shape))
+    assert 0 <= L["score"] <= 100 and L["services"]["medical"]["walk800_coverage"] > 0
+    # dispersing the town lowers concentration and livability
+    pop2 = np.where(d.mask, pop.sum() / d.mask.sum(), 0.0)
+    L2 = I.livability(pop2, lc, names, road, fac, d.dx, d.dy, d.mask)
+    assert L2["concentration"] < L["concentration"] and L2["score"] < L["score"]
+    # flooding the hospital removes flood-time access
+    dep = np.zeros(d.shape); dep[30, 20] = 1.0
+    L3 = I.livability(pop, lc, names, road, fac, d.dx, d.dy, d.mask, flood_depth=dep)
+    assert L3["flood_medical_access_30min"] < L["flood_medical_access_30min"]
+    # ecology: levees lower lateral connectivity; forest raises habitat quality
+    r = d.river
+    r.area_km2[:] = 100.0                         # synthetic channel: give it a real catchment
+    e0 = I.ecology(lc, names, road, d.mask, d.dx, d.dy, r, np.zeros(r.n), [], np.zeros(d.shape),
+                   np.zeros(d.shape), 1.0, 0.5)
+    e1 = I.ecology(lc, names, road, d.mask, d.dx, d.dy, r, np.full(r.n, 3.0), [], np.zeros(d.shape),
+                   np.zeros(d.shape), 1.0, 0.5)
+    lc_f = np.where(lc == 1, 0, lc)
+    e2 = I.ecology(lc_f, names, road, d.mask, d.dx, d.dy, r, np.zeros(r.n), [], np.zeros(d.shape),
+                   np.zeros(d.shape), 1.0, 0.5)
+    assert e1["river_lateral_connectivity"] < e0["river_lateral_connectivity"]
+    assert e2["habitat_quality"] > e0["habitat_quality"]
+    # a dam splits the network -> DCI < 1
+    assert I.dendritic_connectivity(r, [30], 0.0) < 1.0

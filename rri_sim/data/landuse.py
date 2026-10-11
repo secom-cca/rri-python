@@ -14,7 +14,7 @@ import zipfile
 import numpy as np
 import requests
 
-from . import RAW
+from . import RAW, http_get
 
 URL = "https://nlftp.mlit.go.jp/ksj/gml/data/L03-b/L03-b-{yy}/L03-b-{yy}_{mesh}-jgd2011_GML.zip"
 
@@ -39,7 +39,7 @@ def _load_mesh(mesh: str, yy: str = "21"):
     zp = d / f"L03-b-{yy}_{mesh}-jgd2011_GML.zip"
     if not zp.exists():
         d.mkdir(parents=True, exist_ok=True)
-        r = requests.get(URL.format(yy=yy, mesh=mesh), timeout=300)
+        r = http_get(URL.format(yy=yy, mesh=mesh), timeout=300)
         if r.status_code == 404:
             return [], []
         r.raise_for_status()
@@ -63,12 +63,15 @@ def mesh_center(code: str):
     return lat, lon
 
 
-def class_fractions(transform, shape, crs, lon_min, lat_min, lon_max, lat_max, yy="21"):
-    """Fraction of each model class per grid cell, (nclass, ny, nx)."""
+def class_fractions(transform, shape, crs, lon_min, lat_min, lon_max, lat_max, yy="21",
+                    extra_codes=None):
+    """Fraction of each model class per grid cell, (nclass, ny, nx).
+    With extra_codes={'road': ['0901']} also returns {name: fraction array}."""
     from pyproj import Transformer
     tr = Transformer.from_crs("EPSG:6668", crs, always_xy=True)  # JGD2011 geographic
     ny, nx = shape
     counts = np.zeros((len(CLASSES), ny, nx))
+    extra = {k: np.zeros((ny, nx)) for k in (extra_codes or {})}
     for mesh in first_meshes(lon_min, lat_min, lon_max, lat_max):
         codes, lus = _load_mesh(mesh, yy)
         if not codes:
@@ -86,7 +89,11 @@ def class_fractions(transform, shape, crs, lon_min, lat_min, lon_max, lat_max, y
         for k, name in enumerate(CLASSES):
             sel = ok & np.isin(lu, [c for c, n in CODE_TO_CLASS.items() if n == name])
             np.add.at(counts[k], (row[sel], col[sel]), 1)
+        for name, codes_ in (extra_codes or {}).items():
+            sel = ok & np.isin(lu, codes_)
+            np.add.at(extra[name], (row[sel], col[sel]), 1)
     tot = counts.sum(0)
     with np.errstate(invalid="ignore", divide="ignore"):
         frac = np.where(tot > 0, counts / tot, 0.0)
-    return frac
+        extra = {k: np.where(tot > 0, v / np.maximum(tot, 1), 0.0) for k, v in extra.items()}
+    return (frac, extra) if extra_codes else frac

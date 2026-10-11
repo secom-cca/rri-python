@@ -15,7 +15,7 @@ import numpy as np
 import requests
 from PIL import Image
 
-from . import RAW
+from . import RAW, http_get
 
 URL = "https://cyberjapandata.gsi.go.jp/xyz/{layer}/{z}/{x}/{y}.png"
 R_EARTH = 6378137.0
@@ -42,7 +42,7 @@ def fetch_tile(z, x, y, layer="dem_png"):
     cache = RAW / "gsi" / layer / str(z) / str(x) / f"{y}.png"
     if not cache.exists():
         cache.parent.mkdir(parents=True, exist_ok=True)
-        r = requests.get(URL.format(layer=layer, z=z, x=x, y=y), timeout=60)
+        r = http_get(URL.format(layer=layer, z=z, x=x, y=y), timeout=60)
         if r.status_code == 404:
             cache.write_bytes(b"")          # remember missing tile (sea / outside Japan)
         else:

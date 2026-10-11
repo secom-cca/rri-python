@@ -28,6 +28,11 @@ def session():
     s.assets = D.AssetGrid(floor_area_m2=hh * 100, households=hh, employees={"I": hh / 2},
                            paddy_area_m2=np.where(lc == names.index("paddy"), 1e4, 0.0),
                            field_area_m2=np.zeros(d.shape), prefecture="福岡")
+    s.pop = hh * 2.5
+    # a safe built-up area on the hillside (high HAND) as relocation destination
+    s.hand = np.where(d.landclass == names.index("forest"), 20.0, 1.0)
+    lc[5:8, 2:5] = names.index("urban")
+    s.hand[5:8, 2:5] = 30.0
     return s
 
 
@@ -44,7 +49,8 @@ def test_each_edit_applies_only_where_meaningful(session):
                        ("levee", {"height": 4.0}), ("retention", {"depth": 2.0, "inlet": 1.0})]:
         cells = allc if typ != "retention" else flat(d0, np.isin(np.arange(d0.shape[1]), [21, 22])[None, :]
                                                     & (np.arange(d0.shape[0])[:, None] < 10))
-        d, a, floor, notes, storage = s.apply_edits([{"type": typ, "cells": cells, **extra}], {})
+        d, a, pop, floor, notes, storage, applied = s.apply_edits([{"type": typ, "cells": cells, **extra}], {})
+        assert applied[0]["type"] == typ
         if typ == "forest":
             assert (d.landclass[d0.landclass == cn.index("forest")] == cn.index("forest")).all()
             assert (d.landclass[d0.landclass == cn.index("paddy")] == cn.index("forest_new")).all()
@@ -53,7 +59,9 @@ def test_each_edit_applies_only_where_meaningful(session):
             assert (d.landclass[d0.landclass == cn.index("paddy")] == cn.index("paddy_dam")).all()
             assert (d.landclass[d0.landclass == cn.index("urban")] == cn.index("urban")).all()
         if typ == "relocate":
-            assert a.households.sum() == 0 and a.floor_area_m2.sum() == 0
+            # everything painted (all cells) -> nothing left to receive; with a partial
+            # selection households move to the safe built-up cells (tested below)
+            assert a.households.sum() == 0
         if typ == "raise":
             assert np.allclose(floor, 1.45)
         if typ == "levee":
@@ -69,6 +77,20 @@ def test_each_edit_applies_only_where_meaningful(session):
             assert (d.river.embankment[(d0.river.ri < 10)] == 1.0).all()        # overflow weir
         # original domain untouched
         assert np.allclose(s.d.river.embankment, 0.5)
+
+
+def test_relocation_moves_households_to_safe_cells(session):
+    s = session
+    cn = s.class_names
+    src = np.flatnonzero((s.d.landclass == cn.index("urban")).ravel() & (s.hand.ravel() < 5)).tolist()
+    hh0 = s.assets.households.sum()
+    d, a, pop, *_rest, applied = s.apply_edits([{"type": "relocate", "cells": src}], {})
+    q = applied[0]["q"]
+    assert np.isclose(a.households.sum(), hh0)                 # conserved
+    assert a.households.ravel()[src].sum() == 0                # moved out
+    assert (a.households[s.hand > 10]).sum() > 0.99 * hh0      # into safe cells
+    assert q["households"] > 0 and q["dest_cells"] > 0
+    assert (d.landclass.ravel()[src] == cn.index("green")).all()   # vacated land -> green
 
 
 def test_scenario_simulations_conserve_mass(session):

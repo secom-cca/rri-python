@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .. import costs as C
 from .engine import Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -46,6 +47,17 @@ def basin(key: str):
 @app.post("/api/run")
 def run(req: RunRequest):
     return {"job": engine.submit(req.basin, req.event, req.edits, req.params)}
+
+
+class CostRequest(BaseModel):
+    items: list[dict] = []
+    unit_costs: dict = {}
+
+
+@app.post("/api/costs")
+def costs(req: CostRequest):
+    """Recompute project costs for given measure quantities and unit costs."""
+    return C.estimate([{"type": i["type"], "q": i.get("q", {})} for i in req.items], req.unit_costs)
 
 
 @app.get("/api/job/{jid}")

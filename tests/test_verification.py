@@ -239,3 +239,42 @@ def test_floor_raise_reduces_damage():
     raised = D.estimate_damage(h, a, ground_slope=np.zeros(2),
                                floor_height=np.array([0.45, 1.45])).by_category["house"]
     assert np.isclose(raised[0], base[0]) and raised[1] < 0.2 * base[1]
+
+
+def test_tidal_stage_boundary_backflow_and_mass():
+    """Outlet with a prescribed sinusoidal tide: river level near the mouth
+    follows the tide, inflow from the sea occurs, mass balance closes."""
+    d = valley_with_floodplain(embankment=30.0, valley_slope=1e-4)
+    r = d.river
+    k_out = int(np.nonzero(r.dn < 0)[0][0])
+    t = np.arange(0, 48 * 3600 + 1, 600.0)
+    H = r.zb[k_out] + 3.0 + 1.5 * np.sin(2 * np.pi * t / (12.42 * 3600))
+    sim = Simulation(d, inflows={0: Hydrograph([0, 48 * 3600], [20.0, 20.0])},
+                     hr0=np.full(r.n, 3.0), stage_bc={k_out: (t, H)})
+    res = sim.run(48 * 3600, output_interval=600, snapshot_interval=600,
+                  snapshot_fn=lambda s: (float(s.hr[k_out] + s.d.river.zb[k_out]), float(s.Q[k_out])))
+    assert abs(res.mass.relative_error) < 1e-12
+    lv = np.array([v[0] for _, v in res.snapshots])
+    q = np.array([v[1] for _, v in res.snapshots])
+    tt = np.array([tt for tt, _ in res.snapshots])
+    Hi = np.interp(tt, t, H)
+    late = tt > 12 * 3600
+    assert np.corrcoef(lv[late], Hi[late])[0, 1] > 0.9      # mouth level follows the tide
+    assert q.min() < 0                                       # flood tide enters the river
+
+
+def test_parallel_kernels_match_serial():
+    rng = np.random.default_rng(3)
+    ny, nx = 120, 90
+    h = rng.uniform(0, 1, (ny, nx)); z = rng.uniform(0, 50, (ny, nx)); m = np.ones((ny, nx), bool)
+    a = lambda v: np.full((ny, nx), v)  # noqa: E731
+    outs = []
+    for f, g in [(K.slope_fluxes, K.apply_slope_fluxes), (K.slope_fluxes_par, K.apply_slope_fluxes_par)]:
+        hh = h.copy()
+        fx, fy, fb = np.zeros((ny, nx - 1)), np.zeros((ny - 1, nx)), np.zeros((ny, nx))
+        qx, qy = np.zeros((ny, nx - 1)), np.zeros((ny - 1, nx))
+        f(hh, z, m, a(0.1), a(0.05), a(0.2), a(0.05), a(8.0), a(0.0), a(0.0), 250., 250., 5.0,
+          True, 0.5, 1e-6, fx, fy, fb, qx, qy)
+        g(hh, m, fx, fy, fb, qx, qy, 250., 250., 5.0)
+        outs.append(hh)
+    assert np.allclose(outs[0], outs[1], rtol=0, atol=1e-12)

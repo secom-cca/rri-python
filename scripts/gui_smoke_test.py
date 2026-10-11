@@ -38,12 +38,12 @@ with sync_playwright() as p:
     page.screenshot(path=str(OUT / "01_baseline_flood.png"))
 
     # paint measures: paddy dam over the centre, levee along the river, raise houses
-    canvas = page.locator("#view canvas")
+    canvas = page.locator("#view canvas[data-engine]")
     box = canvas.bounding_box()
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
 
     def paint(tool, pts, radius="3"):
-        page.click(f"#tools button[data-tool={tool}]")
+        page.click(f"#tools button[data-tool={tool}], #ops button[data-tool={tool}]")
         page.fill("#brush", radius) if False else page.evaluate(
             "r => { const b = document.getElementById('brush'); b.value = r; b.dispatchEvent(new Event('input')); }", radius)
         page.mouse.move(*pts[0])
@@ -61,8 +61,17 @@ with sync_playwright() as p:
     page.screenshot(path=str(OUT / "02_painted_measures.png"))
     print("edits:", page.inner_text("#edits"))
 
+    paint("relocate", [(cx + 100, cy - 60), (cx + 140, cy - 40)], "1")
     page.click("#run")
     print("scenario:", wait_progress(page, "完了: 被害額"))
+    page.screenshot(path=str(OUT / "06_costs.png"))
+    page.click("#tabs button[data-tab=indic]")
+    page.screenshot(path=str(OUT / "07_indicators.png"))
+    print("indicators:", page.inner_text("#liv")[:200].replace("\n", " | "), "||", page.inner_text("#eco")[:160].replace("\n", " | "))
+    page.click("#tabs button[data-tab=flow]")
+    page.screenshot(path=str(OUT / "08_flow.png"))
+    page.click("#tabs button[data-tab=damage]")
+    print("costs:", page.inner_text("#costs")[:300].replace("\n", " | "))
     page.click("#modes button[data-mode=diff]")
     page.screenshot(path=str(OUT / "03_diff.png"))
     page.click("#modes button[data-mode=damage]")
