@@ -27,6 +27,24 @@
     </section>
 
     <section>
+      <h2>気候条件</h2>
+      <select id="climate">
+        <option value="current">現在気候（観測降雨）</option>
+        <option value="2C">2℃上昇（RCP2.6相当, 21世紀末）</option>
+        <option value="4C">4℃上昇（RCP8.5相当, 21世紀末）</option>
+        <option value="custom">任意設定（倍率を指定）</option>
+      </select>
+      <div id="climate-params" class="climate-params">
+        <label>降雨量倍率 <input id="cl-factor" type="number" value="1.0" step="0.05" min="0.5" max="3"> 倍</label>
+        <label>強雨の強調 γ <input id="cl-gamma" type="number" value="1.0" step="0.05" min="1" max="2">
+          <span class="hint">1=一様、&gt;1で強い時間帯ほど増加（総量は倍率どおり）</span></label>
+        <label>海面上昇 <input id="cl-slr" type="number" value="0" step="0.05" min="0" max="2"> m</label>
+        <button id="cl-apply" class="small">この気候で再計算</button>
+      </div>
+      <div class="hint" id="climate-info"></div>
+    </section>
+
+    <section>
       <h2>操作</h2>
       <div class="tools ops" id="ops">
         <button data-tool="view" class="active" title="ドラッグで視点回転、右ドラッグで移動、ホイールで拡大">🖐 視点</button>
@@ -110,6 +128,7 @@
     <section data-panel="damage" class="panel show">
       <h2>被害額（治水経済調査マニュアル準拠）</h2>
       <div id="kpis"></div>
+      <div id="climate-impact"></div>
       <canvas id="dmg-chart" height="170"></canvas>
       <h2>事業費 <button id="edit-costs" class="small">単価設定</button></h2>
       <div id="costs"></div>

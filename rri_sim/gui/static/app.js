@@ -27,7 +27,7 @@ const RIVER_STOPS = [[0.3, '#93c5fd'], [0.7, '#2563eb'], [0.95, '#facc15'], [1.0
 const S = {
   st: null, basin: null, event: null, base: null, scen: null, edits: [],
   tool: 'view', mode: 'landuse', which: 'scen', frame: -1, exag: 2.5, playing: null,
-  painting: null, hoverCell: -1, unitCosts: {}, colors: null,
+  painting: null, hoverCell: -1, unitCosts: {}, colors: null, baseCurrent: null,
 };
 
 // ------------------------------------------------------------------- helpers
@@ -514,7 +514,9 @@ function drawFlowCharts() {
     const ds = [];
     const hasObs = base.gauges[g].obs.some((v) => v != null);
     if (hasObs) ds.push({ label: '観測', data: base.gauges[g].obs, borderColor: '#111', backgroundColor: '#111', pointRadius: 1.2, showLine: false });
-    ds.push({ label: '現況', data: base.gauges[g].sim, borderColor: '#2563eb', pointRadius: 0, borderWidth: 1.4 });
+    if (!isCurrentClimate() && S.baseCurrent && S.baseCurrent !== base)
+      ds.push({ label: '現況（現在気候）', data: S.baseCurrent.gauges[g].sim, borderColor: '#94a3b8', borderDash: [4, 3], pointRadius: 0, borderWidth: 1.2 });
+    ds.push({ label: isCurrentClimate() ? '現況' : '現況（将来気候）', data: base.gauges[g].sim, borderColor: '#2563eb', pointRadius: 0, borderWidth: 1.4 });
     if (scen) ds.push({ label: '施策', data: scen.gauges[g].sim, borderColor: '#dc2626', pointRadius: 0, borderWidth: 1.4 });
     if (qCharts[k]) qCharts[k].destroy();
     qCharts[k] = new Chart($(`qc-${k}`), { type: 'line', data: { labels, datasets: ds },
@@ -603,12 +605,51 @@ function drawIndicators() {
     `<tr><td>浸水深0.5m以上の区域の居住人口割合</td>${diffCell(L0.pop_in_hazard_share * 100, L1 ? L1.pop_in_hazard_share * 100 : null, '%', 'lower')}</tr>` +
     `<tr><td>洪水時に医療機関へ30分以内で到達可能な人口割合</td>${diffCell(L0.flood_medical_access_30min * 100, L1 ? L1.flood_medical_access_30min * 100 : null, '%', 'higher')}</tr></table>`;
 }
-function drawPanels() { drawDamagePanel(); drawIndicators(); drawFlowCharts(); }
+function drawPanels() { drawDamagePanel(); drawClimateImpact(); drawIndicators(); drawFlowCharts(); }
+
+// ------------------------------------------------------------------- climate
+function climateParams() {
+  const p = $('climate').value;
+  if (p === 'current') return { preset: 'current' };
+  return { preset: p, rain_factor: +$('cl-factor').value, intensity_gamma: +$('cl-gamma').value,
+    sea_level_rise_m: +$('cl-slr').value };
+}
+function isCurrentClimate() { const c = climateParams(); return c.preset === 'current'; }
+function syncClimateInputs() {
+  const p = $('climate').value, st = S.st;
+  if (st && (p === '2C' || p === '4C')) {
+    const c = st.climate_presets[p];
+    $('cl-factor').value = c.rain_factor; $('cl-gamma').value = 1.0; $('cl-slr').value = c.sea_level_rise_m;
+    $('climate-info').textContent = c.source + '。将来降雨は観測降雨（評価期間）を倍率で拡大。前期降雨（スピンアップ）は現在気候のまま。';
+  } else if (p === 'custom') {
+    $('climate-info').textContent = '任意の降雨量倍率・強雨強調・海面上昇を指定（例: 1.1倍, 1.2倍）。';
+  } else {
+    $('climate-info').textContent = '観測降雨そのもの（現在気候）。';
+  }
+  $('climate-params').style.display = p === 'current' ? 'none' : 'block';
+}
+function drawClimateImpact() {
+  const el = $('climate-impact'), b = S.base, ref = S.baseCurrent;
+  if (!b || isCurrentClimate() || !ref || ref === b) { el.innerHTML = ''; return; }
+  const c = b.climate;
+  const rows = [['流域平均雨量（評価期間）[mm]', ref.basin_rain.reduce((a, v) => a + v, 0), b.basin_rain.reduce((a, v) => a + v, 0), 0],
+    ['被害額 [億円]', ref.damage_total_oku, b.damage_total_oku, 1], ['浸水面積 [km²]', ref.inundated_km2, b.inundated_km2, 1],
+    ['床上浸水世帯', ref.households_above_floor, b.households_above_floor, 0]];
+  for (const g of Object.keys(b.gauges)) {
+    const pk = (a) => Math.max(...a.filter((v) => v != null));
+    rows.push([`ピーク流量 ${g} [m³/s]`, pk(ref.gauges[g].sim), pk(b.gauges[g].sim), 0]);
+  }
+  el.innerHTML = `<h2>気候変動の影響（施策なし）: ${c.label}</h2><div class="hint">降雨×${c.rain_factor}${c.intensity_gamma !== 1 ? `（γ=${c.intensity_gamma}）` : ''}、海面 +${c.sea_level_rise_m} m</div>` +
+    '<table class="ind"><tr><th></th><th>現在気候</th><th>将来気候</th><th>差</th></tr>' +
+    rows.map(([n, a, z, d]) => `<tr><td>${n}</td>${diffCell(a, z, '', 'lower', d)}</tr>`).join('') + '</table>' +
+    '<div class="hint">右の「現況／施策」の比較は、選択した気候条件の下での比較です。</div>';
+}
 
 // ------------------------------------------------------------------- jobs
-async function runJob(edits) {
+async function runJob(edits, climate = climateParams()) {
   const params = { paddy_store_m: +$('pd-store').value / 100, paddy_release_mmh: +$('pd-rel').value,
-    forest_n: +$('fo-n').value, forest_soil_m: +$('fo-soil').value, unit_costs: S.unitCosts };
+    forest_n: +$('fo-n').value, forest_soil_m: +$('fo-soil').value, unit_costs: S.unitCosts,
+    climate };
   const { job } = await getJSON('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ basin: S.basin, event: S.event, edits, params }) });
   $('run').disabled = true;
@@ -633,7 +674,12 @@ async function runBaseline() {
   S.base = null; S.scen = null;
   setProgress(0, '現況（施策なし）を計算中… 初回はデータ取得とスピンアップ計算のため時間がかかります');
   try {
-    S.base = await runJob([]);
+    if (!S.baseCurrent || S.baseCurrent._event !== S.basin + S.event) {
+      S.baseCurrent = await runJob([], { preset: 'current' });
+      S.baseCurrent._event = S.basin + S.event;
+    }
+    if (isCurrentClimate()) S.base = S.baseCurrent;
+    else { setProgress(0.5, `将来気候（${$('climate').selectedOptions[0].text}）の現況を計算中…`); S.base = await runJob([]); }
     log(`現況 計算完了: ${S.base.wall_s.toFixed(1)} s, 水収支誤差 ${S.base.mass_rel_err.toExponential(1)}`);
     S.which = 'base'; selectButton('which', 'base');
     if (S.mode === 'landuse') { S.mode = 'flood'; selectButton('modes', 'flood'); }
@@ -702,6 +748,8 @@ $('show-fac').onchange = () => { refreshLegend(); drawMinimapOverlay(); };
 $('run').onclick = runScenario;
 $('clear').onclick = () => { S.edits = []; S.scen = null; renderEdits(); setResultUI(); };
 $('event').onchange = (e) => { S.event = e.target.value; runBaseline(); };
+$('climate').onchange = () => { syncClimateInputs(); S.scen = null; runBaseline(); };
+$('cl-apply').onclick = () => { S.scen = null; runBaseline(); };
 $('basin').onchange = (e) => loadBasin(e.target.value);
 
 async function loadBasin(key) {
@@ -722,6 +770,7 @@ async function loadBasin(key) {
   const pref = st.events.find((e) => e.role === 'validation' && /20(19|20)$/.test(e.key)) || st.events[st.events.length - 1];
   $('event').value = pref.key; S.event = pref.key;
   setupMinimap(); buildTerrain(); renderEdits(); buildUnitCostEditor(); colorize(); refreshBars();
+  S.baseCurrent = null; syncClimateInputs();
   runBaseline();
 }
 async function init() {

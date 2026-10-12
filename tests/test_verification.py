@@ -278,3 +278,40 @@ def test_parallel_kernels_match_serial():
         g(hh, m, fx, fy, fb, qx, qy, 250., 250., 5.0)
         outs.append(hh)
     assert np.allclose(outs[0], outs[1], rtol=0, atol=1e-12)
+
+
+def test_climate_scaling_preserves_target_totals():
+    from rri_sim.climate import ClimateScenario, preset, scale_rainfall
+    rng = np.random.default_rng(5)
+    fields = rng.gamma(0.5, 8.0, (48, 4, 5))                       # mm/h
+    rain = Rainfall(np.arange(49) * 3600.0, fields)
+    for sc in (ClimateScenario(rain_factor=1.2), ClimateScenario(rain_factor=1.1, intensity_gamma=1.3)):
+        r2 = scale_rainfall(rain, sc, t_start=12 * 3600)
+        d0 = rain.depth(12 * 3600, 48 * 3600)
+        d1 = r2.depth(12 * 3600, 48 * 3600)
+        assert np.allclose(d1, sc.rain_factor * d0)                 # event total scaled exactly
+        assert np.allclose(r2.depth(0, 12 * 3600), rain.depth(0, 12 * 3600))   # spin-up untouched
+    # gamma > 1 increases the peak hour more than the total
+    sc = ClimateScenario(rain_factor=1.1, intensity_gamma=1.3)
+    r2 = scale_rainfall(rain, sc, t_start=0)
+    assert (r2.rates.max(0) / rain.rates.max(0)).mean() > 1.1
+    assert preset("4C", "九州北西部", "IV").rain_factor == 1.4
+
+
+def test_factor_raster_resampling(tmp_path):
+    """A constant 1.3 change-factor GeoTIFF on another CRS maps to 1.3 on the model grid."""
+    import rasterio
+    from rasterio.transform import from_origin
+    from rri_sim.climate import ClimateScenario, load_factor_raster, scale_rainfall
+    d = valley_with_floodplain()
+    d.crs = "EPSG:6689"          # JGD2011 / UTM zone 52N (central meridian 129E)
+    d.transform = from_origin(500000.0, 3700000.0, d.dx, d.dy)
+    path = tmp_path / "f.tif"
+    with rasterio.open(path, "w", driver="GTiff", height=50, width=50, count=1, dtype="float32",
+                       crs="EPSG:4326", transform=from_origin(128.9, 33.5, 0.01, 0.01)) as dst:
+        dst.write(np.full((1, 50, 50), 1.3, np.float32))
+    f = load_factor_raster(path, d)
+    assert np.allclose(f[d.mask], 1.3)
+    rain = Rainfall.uniform([0, 3600, 7200], [10.0, 20.0], d.shape)
+    r2 = scale_rainfall(rain, ClimateScenario(factor_field=f), 0)
+    assert np.allclose(r2.depth(0, 7200), 1.3 * rain.depth(0, 7200))

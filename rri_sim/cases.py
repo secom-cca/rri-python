@@ -8,12 +8,13 @@ from .basin import BasinConfig
 BASINS = {
     "kusu_ogase": dict(
         cfg=BasinConfig(name="kusu_ogase", outlet_lonlat=(130.96444, 33.29806),
-                        bbox=(130.90, 33.05, 131.40, 33.40), crs="EPSG:6690", res=250.0,
+                        bbox=(130.90, 33.05, 131.40, 33.40), crs="EPSG:6690", res=250.0,   # NB: UTM53; zone 52 (EPSG:6689) is optimal for Kyushu (scale error ~0.14%)
                         river_threshold_km2=5.0,
                         gauges={"ogase": (130.96444, 33.29806),
                                 "takenaka": (131.11806, 33.27667)}),
         mlit_suikei="89094000", jma_prec_nos=(82, 83, 86),
         discharge_gauges={"ogase": "309061289901330"}, prefs=(44, 40, 43), prefecture="大分",
+        climate_region=("九州北西部", "IV"),
         stage_gauges={"takenaka": "309061289920090"},
     ),
     # 阿武隈川 upstream of 阿久津 (郡山), 2019 台風19号.  JGD2011 / UTM 54N.
@@ -25,14 +26,14 @@ BASINS = {
                                 "sukagawa": (140.38889, 37.30028)}),
         mlit_suikei="82020000", jma_prec_nos=(36,),
         discharge_gauges={"akutsu": "302011282218270", "sukagawa": "302011282218300"},
-        prefs=(7,), prefecture="福島",
+        prefs=(7,), prefecture="福島", climate_region=("その他", "I"),
         stage_gauges={},
     ),
     # ------------------------------------------------------------ whole basins
     # 筑後川全域: outlet at 若津 (tidal reach, observed stage as downstream boundary)
     "chikugo_whole": dict(
         cfg=BasinConfig(name="chikugo_whole", outlet_lonlat=(130.36222, 33.21472),
-                        bbox=(130.20, 32.95, 131.35, 33.60), crs="EPSG:6690", res=250.0,
+                        bbox=(130.20, 32.95, 131.35, 33.60), crs="EPSG:6690", res=250.0,   # NB: UTM53; zone 52 (EPSG:6689) is optimal for Kyushu (scale error ~0.14%)
                         river_threshold_km2=5.0, gauge_snap_m=600.0,
                         burn_prefs=(40, 41, 43, 44), burn_system="筑後川",
                         gauges={"小渕": (130.94278, 33.30639), "小ヶ瀬": (130.96444, 33.29806),
@@ -46,6 +47,8 @@ BASINS = {
                           "瀬ノ下": "309061289901190"},
         stage_gauges={},
         prefs=(40, 41, 43, 44), prefecture="福岡",
+        # 降雨量変化倍率の地域区分 / 海面上昇の領域（日本の気候変動2020: IV=北陸〜九州の東シナ海側）
+        climate_region=("九州北西部", "IV"),
         existing_levees={"source": "DEM5A", "min_area_km2": 30.0},
         # 低平地の排水（排水機場・下水道・クリーク）: assumption, see docs/04 4b
         lowland_drainage={"urban_mmh": 10.0, "agri_mmh": 2.0, "hand_max_m": 5.0},
@@ -79,6 +82,7 @@ BASINS = {
                           "江尻": "302011282206060"},
         stage_gauges={},
         prefs=(7, 4), prefecture="福島",
+        climate_region=("その他", "I"),          # 東北: その他12地域 / 領域I 北海道・東北
         existing_levees={"source": "DEM5A", "min_area_km2": 30.0},
         lowland_drainage={"urban_mmh": 10.0, "agri_mmh": 2.0, "hand_max_m": 5.0},
         lowland_river_n={1e-3: 0.030, 2e-4: 0.025},

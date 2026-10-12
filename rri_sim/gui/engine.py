@@ -38,6 +38,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
+from .. import climate as CL
 from .. import costs as C
 from .. import damage as D
 from .. import indicators as I
@@ -144,6 +145,9 @@ class BasinSession:
             "preset": PRESETS.get(self.key, {}),
             "unit_costs": C.UNIT_COSTS,
             "note": self.b.get("gui_note", ""),
+            "climate_presets": {lv: CL.preset(lv, *self.b.get("climate_region", ("その他", "I"))).to_dict()
+                                for lv in ("2C", "4C")},
+            "climate_region": list(self.b.get("climate_region", ("その他", "I"))),
         }
 
     # -------------------------------------------------------------- spin-up
@@ -322,17 +326,34 @@ class BasinSession:
             applied.append({"type": t, "q": q})
         return d, assets, pop, floor, notes, storage, applied
 
+    def climate(self, gparams) -> "CL.ClimateScenario":
+        rr, sr = self.b.get("climate_region", ("その他", "I"))
+        return CL.from_params((gparams or {}).get("climate"), rr, sr)
+
+    @staticmethod
+    def _summary(res):
+        return {"damage_total_oku": res["damage_total_oku"], "inundated_km2": res["inundated_km2"],
+                "households_above_floor": res["households_above_floor"],
+                "households_below_floor": res["households_below_floor"],
+                "peaks": {g: float(np.nanmax(v["sim"])) for g, v in res["gauges"].items()},
+                "gauges": {g: v["sim"] for g, v in res["gauges"].items()},
+                "basin_rain_total_mm": float(np.sum(res["basin_rain"])),
+                "livability": res["livability"]["score"], "ecology": res["ecology"]["score"]}
+
     def run(self, event_key, edits=None, gparams=None, progress=None):
         edits = edits or []
         gparams = gparams or {}
         prep = self.prepare(event_key, progress)
+        sc = self.climate(gparams)
+        bkey = (event_key, sc.key())
         is_base = not edits
-        if is_base and event_key in self._baseline:
-            return self._baseline[event_key]
-        base_depth = self._baseline[event_key]["_depth"] if (not is_base and event_key in self._baseline) else None
+        if is_base and bkey in self._baseline:
+            return self._baseline[bkey]
+        base_depth = self._baseline[bkey]["_depth"] if (not is_base and bkey in self._baseline) else None
         d, assets, pop, floor, edit_log, storage, applied = self.apply_edits(edits, gparams, base_depth)
         dams = [copy.copy(dm) for dm in prep["dams"]]
-        sim = Simulation(d, prep["rain"], dams=dams, stage_bc=prep["stage_bc"],
+        rain = CL.scale_rainfall(prep["rain"], sc, t_start=0.0)   # event window (after spin-up)
+        sim = Simulation(d, rain, dams=dams, stage_bc=CL.shift_stage(prep["stage_bc"], sc),
                          drainage=drainage_arrays(self.key, d, self.meta, d.landclass))
         sim.set_state(prep["state"])
         fc = self.flood_cells
@@ -374,7 +395,7 @@ class BasinSession:
             "event": event_key, "edits_log": edit_log, "wall_s": wall, "steps": res.n_steps,
             "mass_rel_err": res.mass.relative_error,
             "times": [str(t) for t in prep["times"][1:len(res.snapshots) + 1]],
-            "basin_rain": prep["basin_rain"].round(2).tolist(),
+            "basin_rain": self._basin_rain(rain, prep["t_end"]).round(2).tolist(),
             "frames_depth_cm": b64(np.clip(frames_d * 100, 0, 65535), "<u2"),
             "frames_river_cm": b64(np.clip(frames_r * 100, 0, 65535), "<u2"),
             "nt": len(res.snapshots),
@@ -402,11 +423,20 @@ class BasinSession:
             "cost": cost,
             "livability": liv,
             "ecology": eco,
+            "climate": sc.to_dict(),
         }
+        cur = self._baseline.get((event_key, CL.ClimateScenario().key()))
+        if not sc.is_current and cur is not None:
+            out["climate_reference"] = self._summary(cur)      # current-climate baseline for comparison
         if is_base:
             out["_depth"] = depth
-            self._baseline[event_key] = out
+            self._baseline[bkey] = out
         return out
+
+    def _basin_rain(self, rain, t_end):
+        mid = 0.5 * (rain.edges[:-1] + rain.edges[1:])
+        w = (mid > 0) & (mid <= t_end)
+        return rain.rates[w][:, self.d.mask].mean(1) * 3.6e6
 
 
 def _raise_thread_qos():
