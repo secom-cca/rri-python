@@ -15,7 +15,9 @@ const TOOL = {
   raise:     { jp: '嵩上げ',     color: '#f59e0b' },
   levee:     { jp: '堤防',       color: '#7c4a1e' },
   retention: { jp: '遊水地',     color: '#db2777' },
+  relocate_dest: { jp: '移転先',  color: '#c084fc' },
 };
+const DEST_JP = { new: '高台の新規造成地', existing: '既存市街地へ集約', painted: '指定した移転先' };
 const CAT_JP = { house: '家屋', household_goods: '家庭用品', car: '自動車', business_depreciable: '事業所償却',
   business_inventory: '事業所在庫', farm_depreciable: '農漁家償却', farm_inventory: '農漁家在庫', paddy: '水稲', field: '畑作物' };
 const SVC_JP = { medical: '医療', school: '教育（小・中学校）', commercial: '商業', public: '公共サービス' };
@@ -448,7 +450,8 @@ window.addEventListener('pointerup', () => {
   } else if (p.cells.size) {
     const cells = applicable(p.type, [...p.cells]);
     if (cells.length) S.edits.push({ type: p.type, cells, ...toolParams(p.type) });
-    setProgress(0, `${TOOL[p.type].jp}: 塗った ${p.cells.size} セルのうち適用 ${cells.length} セル`);
+    const why = p.type === 'retention' ? '（建物用地・河道・水域は除外）' : p.type === 'relocate_dest' ? '（河道・水域は除外）' : '';
+    setProgress(0, `${TOOL[p.type].jp}: 塗った ${p.cells.size} セルのうち適用 ${cells.length} セル${why}`);
   }
   renderEdits(); refreshBars(); colorize();
 });
@@ -458,18 +461,22 @@ function applicable(type, cells) {
   if (type === 'forest') return cells.filter((c) => ![id('forest'), id('water'), id('forest_new')].includes(lc[c]));
   if (type === 'levee') return cells.filter((c) => S.riverSet.has(c));
   if (type === 'relocate' || type === 'raise') return cells.filter((c) => S.value[c] > 0 && S.hh[c] + S.value[c] / 1e8 > 0.01);
+  if (type === 'retention') return cells.filter((c) => !S.riverSet.has(c) && ![id('urban'), id('water')].includes(lc[c]));
+  if (type === 'relocate_dest') return cells.filter((c) => !S.riverSet.has(c) && lc[c] !== id('water'));
   return cells;
 }
 function toolParams(t) {
   if (t === 'raise') return { height: +$('raise-h').value, terrain: $('raise-terrain').checked };
   if (t === 'levee') return { height: +$('levee-h').value };
-  if (t === 'retention') return { depth: +$('ret-d').value, inlet: +$('ret-inlet').value };
+  if (t === 'retention') return { depth: +$('ret-d').value, auto: $('ret-auto').checked, q_ratio: +$('ret-q').value / 100 };
+  if (t === 'relocate') return { dest: $('rl-dest').value, density: +$('rl-dens').value };
   return {};
 }
 function describeEdit(e) {
   const km2 = (e.cells.length * S.st.dx * S.st.dy / 1e6).toFixed(2);
   const extra = e.type === 'raise' ? ` +${e.height}m${e.terrain ? '盛土' : ''}` : e.type === 'levee' ? ` ${e.height}m`
-    : e.type === 'retention' ? ` 掘削${e.depth}m 越流堤${e.inlet}m` : '';
+    : e.type === 'retention' ? ` 貯留深${e.depth}m 越流開始=${e.auto ? '自動' : `現況ピークの${Math.round(e.q_ratio * 100)}%`}`
+    : e.type === 'relocate' ? ` →${DEST_JP[e.dest]}${e.dest !== 'existing' ? `（${e.density}人/ha）` : ''}` : '';
   return `${TOOL[e.type].jp}${extra}（${e.cells.length}セル, ${km2} km²）`;
 }
 function renderEdits() {
@@ -502,12 +509,13 @@ let dChart = null;
 const qCharts = {};
 function drawFlowCharts() {
   const base = S.base, scen = S.scen, box = $('q-charts');
-  if (!base) return;
+  if (!base) { box.innerHTML = '<div class="hint">未計算です。「▶ 洪水計算を実行」で計算します。</div>'; delete box.dataset.key; Object.keys(qCharts).forEach((k) => { qCharts[k].destroy(); delete qCharts[k]; }); return; }
   const labels = base.times.map((t) => t.slice(5, 13).replace('T', ' '));
   const names = Object.keys(base.gauges);
-  if (box.dataset.basin !== S.basin + S.event) {
+  const key = [S.basin, S.res, S.event, ...names].join('|');
+  if (box.dataset.key !== key || !$(`qk-${names.length - 1}`)) {
     box.innerHTML = names.map((g, k) => `<div class="qchart"><div class="t"><span>${g}</span><span id="qk-${k}"></span></div><canvas id="qc-${k}" height="120"></canvas></div>`).join('');
-    box.dataset.basin = S.basin + S.event;
+    box.dataset.key = key;
     for (const k of Object.keys(qCharts)) { qCharts[k].destroy(); delete qCharts[k]; }
   }
   names.forEach((g, k) => {
@@ -524,12 +532,13 @@ function drawFlowCharts() {
         plugins: { legend: { display: k === 0, labels: { boxWidth: 8, font: { size: 9 } } } },
         scales: { x: { ticks: { maxTicksLimit: 5, font: { size: 9 } } }, y: { ticks: { font: { size: 9 } }, title: { display: true, text: 'm³/s', font: { size: 9 } } } } } });
     const pk = (a) => Math.max(...a.filter((v) => v != null));
-    $(`qk-${k}`).textContent = `ピーク 観測 ${hasObs ? fmt(pk(base.gauges[g].obs), 0) : '—'} / 現況 ${fmt(pk(base.gauges[g].sim), 0)}${scen ? ' / 施策 ' + fmt(pk(scen.gauges[g].sim), 0) : ''} m³/s`;
+    const pkEl = $(`qk-${k}`);
+    if (pkEl) pkEl.textContent = `ピーク 観測 ${hasObs ? fmt(pk(base.gauges[g].obs), 0) : '—'} / 現況 ${fmt(pk(base.gauges[g].sim), 0)}${scen ? ' / 施策 ' + fmt(pk(scen.gauges[g].sim), 0) : ''} m³/s`;
   });
 }
 function drawDamagePanel() {
   const base = S.base, scen = S.scen;
-  if (!base) return;
+  if (!base) { $('kpis').innerHTML = '<div class="hint">未計算です。「▶ 洪水計算を実行」で計算します。</div>'; if (dChart) { dChart.destroy(); dChart = null; } drawCosts(); return; }
   const rows = [
     ['被害額 [億円]', base.damage_total_oku, scen?.damage_total_oku, 1],
     ['浸水面積 [km²]', base.inundated_km2, scen?.inundated_km2, 1],
@@ -538,7 +547,7 @@ function drawDamagePanel() {
   ];
   $('kpis').innerHTML = `<table class="ind"><tr><th></th><th>現況</th><th>施策</th><th>差</th></tr>` +
     rows.map(([n, b, s, d]) => `<tr><td>${n}</td>${diffCell(b, s, '', 'lower', d)}</tr>`).join('') + '</table>' +
-    (scen && scen.retention_max_storage_mcm > 0 ? `<div class="hint">遊水地 最大貯留量（概算）${scen.retention_max_storage_mcm.toFixed(2)} 百万m³（遊水地内は集計対象外）</div>` : '') +
+    (scen && scen.retention && scen.retention.length ? `<div class="hint">${scen.retention.map((r) => `${r.name}: 越流開始 ${r.q_cut.toFixed(0)} m³/s、最大貯留 ${r.max_storage_mcm.toFixed(2)}／容量 ${r.capacity_mcm.toFixed(2)} 百万m³（${(r.fill_ratio * 100).toFixed(0)}%）、取込地点のピーク流量 ${r.inlet_peak_before.toFixed(0)} → ${r.inlet_peak_after.toFixed(0)} m³/s`).join('<br>')}（遊水地内は浸水・被害の集計対象外）</div>` : '') +
     (Object.keys(base.dams || {}).length ? `<div class="hint">ダム最大貯留: ${Object.entries((scen || base).dams).map(([n, v]) => `${n} ${v.max_storage_mcm.toFixed(1)}/${v.capacity_mcm.toFixed(1)} 百万m³`).join('、')}</div>` : '');
   const cats = Object.keys(base.damage_by_category_oku);
   if (dChart) dChart.destroy();
@@ -552,7 +561,7 @@ function costTable(cost) {
   const q = (it) => {
     const x = it.q || {};
     if (it.type === 'levee') return `延長 ${fmt((x.length_m || 0) / 1000)} km・平均嵩上 ${fmt(x.height_m)} m`;
-    if (it.type === 'retention') return `${fmt((x.area_m2 || 0) / 1e6, 2)} km²・掘削 ${fmt(x.depth_m)} m`;
+    if (it.type === 'retention') return `${fmt((x.area_m2 || 0) / 1e6, 2)} km²・貯留深 ${fmt(x.depth_m)} m・容量 ${fmt((x.capacity_m3 || 0) / 1e6, 2)} 百万m³`;
     if (it.type === 'paddy_dam') return `水田 ${fmt((x.area_m2 || 0) / 1e6, 2)} km²`;
     if (it.type === 'forest') return `${fmt((x.area_m2 || 0) / 1e6, 2)} km²`;
     if (it.type === 'relocate') return `${fmt(x.households, 0)} 世帯・${fmt(x.employees, 0)} 人`;
@@ -585,7 +594,7 @@ function buildUnitCostEditor() {
 }
 function drawIndicators() {
   const b = S.base, s = S.scen;
-  if (!b) return;
+  if (!b) { $('liv').innerHTML = '<div class="hint">未計算です。「▶ 洪水計算を実行」で計算します。</div>'; $('eco').innerHTML = ''; $('safety').innerHTML = ''; return; }
   const L0 = b.livability, L1 = s?.livability, E0 = b.ecology, E1 = s?.ecology;
   const sc = (x0, x1) => `<div class="score"><span class="big">${fmt(x0)}</span><span>現況</span>${x1 != null ? `<span class="big ${x1 - x0 >= 0 ? 'good' : 'bad'}">${fmt(x1)}</span><span>施策（${x1 - x0 >= 0 ? '+' : ''}${fmt(x1 - x0)}）</span>` : ''}</div>`;
   let h = sc(L0.score, L1?.score) + '<table class="ind"><tr><th>サービス</th><th>徒歩800m圏<br>人口カバー率</th><th>車10–30分<br>アクセス</th><th>平均所要<br>（車, 分）</th></tr>';
@@ -593,7 +602,8 @@ function drawIndicators() {
     const a = L0.services[k], z = L1?.services[k];
     h += `<tr><td>${SVC_JP[k]}</td><td>${fmt(a.walk800_coverage * 100, 0)}%${z ? ' → ' + fmt(z.walk800_coverage * 100, 0) + '%' : ''}</td><td>${fmt(a.car_access * 100, 0)}%${z ? ' → ' + fmt(z.car_access * 100, 0) + '%' : ''}</td><td>${fmt(a.mean_car_min)}${z ? ' → ' + fmt(z.mean_car_min) : ''}</td></tr>`;
   }
-  h += `<tr><td>居住集約度（人口加重密度）</td><td colspan="3">${fmt(L0.population_weighted_density_per_ha)} 人/ha${L1 ? ' → ' + fmt(L1.population_weighted_density_per_ha) : ''}（基準 40 人/ha = DID）</td></tr></table>`;
+  h += `<tr><td>居住集約度の内訳</td><td colspan="3">市街地（居住誘導区域の代替＝現況の建物用地）の人口密度 ${fmt(L0.zone_density_per_ha)} 人/ha${L1 ? ' → ' + fmt(L1.zone_density_per_ha) : ''}（基準 40 人/ha = DID）、`
+    + `市街地居住率 ${fmt(L0.zone_population_share * 100, 0)}%${L1 ? ' → ' + fmt(L1.zone_population_share * 100, 0) + '%' : ''}、参考: 人口加重平均密度 ${fmt(L0.population_weighted_density_per_ha)} 人/ha${L1 ? ' → ' + fmt(L1.population_weighted_density_per_ha) : ''}</td></tr></table>`;
   $('liv').innerHTML = h;
   const row = (n, k) => `<tr><td>${n}</td>${diffCell(E0[k] * 100, E1 ? E1[k] * 100 : null, '', 'higher', 1)}</tr>`;
   $('eco').innerHTML = sc(E0.score, E1?.score) + '<table class="ind"><tr><th></th><th>現況</th><th>施策</th><th>差</th></tr>' +
@@ -646,22 +656,27 @@ function drawClimateImpact() {
 }
 
 // ------------------------------------------------------------------- jobs
-async function runJob(edits, climate = climateParams()) {
+const fmtSec = (x) => (x >= 60 ? `${Math.floor(x / 60)}分${String(Math.floor(x % 60)).padStart(2, '0')}秒` : `${Math.floor(x)}秒`);
+async function pollJob(job, label) {
+  $('run').disabled = true;
+  try {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 700));
+      const j = await getJSON(`/api/job/${job}`);
+      const t = j.status === 'queued' ? '' : `（この段階 ${fmtSec(j.phase_elapsed_s)}／合計 ${fmtSec(j.elapsed_s)}）`;
+      setProgress(j.progress, `${label ? label + ': ' : ''}${j.message}${t}`);
+      if (j.status === 'done') return j;
+      if (j.status === 'error') { log(j.message); throw new Error(j.message.split('\n')[0]); }
+    }
+  } finally { $('run').disabled = false; }
+}
+async function runJob(edits, climate = climateParams(), label = '') {
   const params = { paddy_store_m: +$('pd-store').value / 100, paddy_release_mmh: +$('pd-rel').value,
     forest_n: +$('fo-n').value, forest_soil_m: +$('fo-soil').value, unit_costs: S.unitCosts,
     climate };
   const { job } = await getJSON('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ basin: S.basin, event: S.event, edits, params }) });
-  $('run').disabled = true;
-  try {
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 800));
-      const j = await getJSON(`/api/job/${job}`);
-      setProgress(j.progress, j.message);
-      if (j.status === 'done') return prepResult(j.result);
-      if (j.status === 'error') { log(j.message); throw new Error(j.message.split('\n')[0]); }
-    }
-  } finally { $('run').disabled = false; }
+    body: JSON.stringify({ basin: S.basin, event: S.event, edits, params, res: S.res }) });
+  return prepResult((await pollJob(job, label)).result);
 }
 function setResultUI() {
   const res = currentResult();
@@ -672,32 +687,37 @@ function setResultUI() {
 }
 async function runBaseline() {
   S.base = null; S.scen = null;
-  setProgress(0, '現況（施策なし）を計算中… 初回はデータ取得とスピンアップ計算のため時間がかかります');
-  try {
-    if (!S.baseCurrent || S.baseCurrent._event !== S.basin + S.event) {
-      S.baseCurrent = await runJob([], { preset: 'current' });
-      S.baseCurrent._event = S.basin + S.event;
-    }
-    if (isCurrentClimate()) S.base = S.baseCurrent;
-    else { setProgress(0.5, `将来気候（${$('climate').selectedOptions[0].text}）の現況を計算中…`); S.base = await runJob([]); }
-    log(`現況 計算完了: ${S.base.wall_s.toFixed(1)} s, 水収支誤差 ${S.base.mass_rel_err.toExponential(1)}`);
-    S.which = 'base'; selectButton('which', 'base');
-    if (S.mode === 'landuse') { S.mode = 'flood'; selectButton('modes', 'flood'); }
-    setResultUI();
-    setProgress(1, '現況の計算完了。施策を塗って「洪水計算を実行」');
-  } catch (e) { setProgress(0, `エラー: ${e.message}`); }
+  if (!S.baseCurrent || S.baseCurrent._event !== S.basin + S.event) {
+    S.baseCurrent = await runJob([], { preset: 'current' }, '現況（施策なし）');
+    S.baseCurrent._event = S.basin + S.event;
+  }
+  if (isCurrentClimate()) S.base = S.baseCurrent;
+  else S.base = await runJob([], climateParams(), `現況（施策なし, ${$('climate').selectedOptions[0].text}）`);
+  log(`現況 計算完了: ${S.base.wall_s.toFixed(1)} s, 水収支誤差 ${S.base.mass_rel_err.toExponential(1)}`);
 }
 async function runScenario() {
-  if (!S.base) await runBaseline();
-  if (!S.edits.length) { setProgress(0, '施策がありません（現況のみ）'); return; }
   try {
-    S.scen = await runJob(S.edits);
+    if (!S.base) await runBaseline();
+    if (!S.edits.length) {
+      S.which = 'base'; selectButton('which', 'base');
+      if (S.mode === 'landuse') { S.mode = 'flood'; selectButton('modes', 'flood'); }
+      setResultUI();
+      setProgress(1, '現況（施策なし）の計算完了。施策を塗って再度「洪水計算を実行」すると比較できます');
+      return;
+    }
+    S.scen = await runJob(S.edits, climateParams(), '施策あり');
     log(`施策 計算完了: ${S.scen.wall_s.toFixed(1)} s, 水収支誤差 ${S.scen.mass_rel_err.toExponential(1)}\n` + S.scen.edits_log.join('\n'));
     S.which = 'scen'; selectButton('which', 'scen');
+    if (S.mode === 'landuse') { S.mode = 'flood'; selectButton('modes', 'flood'); }
     setResultUI();
     const dd = S.scen.damage_total_oku - S.base.damage_total_oku;
     setProgress(1, `完了: 被害額 ${dd <= 0 ? '' : '+'}${dd.toFixed(1)} 億円、事業費(PV) ${oku(S.scen.cost.pv_yen).toFixed(1)} 億円`);
   } catch (e) { setProgress(0, `エラー: ${e.message}`); }
+}
+function invalidateResults(why) {
+  S.base = null; S.scen = null;
+  if (S.st) setResultUI();
+  setProgress(0, `${why}。「▶ 洪水計算を実行」で計算します`);
 }
 
 // -------------------------------------------------------------------- time
@@ -722,16 +742,33 @@ function selectButton(group, val) {
   const sel = group === 'tools' ? '#tools button, #ops button' : `#${group} button`;
   document.querySelectorAll(sel).forEach((b) => b.classList.toggle('active', b.dataset[key] === val));
 }
-document.querySelectorAll('#tools button, #ops button').forEach((b) => b.onclick = () => {
-  S.tool = b.dataset.tool; selectButton('tools', S.tool);
-  controls.enableRotate = S.tool === 'view';
-  document.querySelectorAll('#tool-params > div').forEach((d) => d.classList.toggle('show', d.dataset.for === S.tool));
-  $('tool-hint').textContent = S.tool === 'view' ? '左ドラッグ＝回転、右ドラッグ＝移動、ホイール＝拡大。2D地図クリックで移動。'
-    : S.tool === 'levee' ? '河道に沿って塗ると、範囲内の河道セルに堤防を設置（樋門付き）'
-    : S.tool === 'retention' ? '河道沿いの低地を塗る：河道外は掘削、隣接河道は越流堤（この高さを超えると流入）'
-    : S.tool === 'paddy_dam' ? '水田セルのみ有効（他の土地利用は無視）'
-    : S.tool === 'erase' ? '塗った範囲の施策を取り消し' : '左ドラッグで塗る（3D・2D地図）。右ドラッグ＝移動';
-});
+function selectTool(t) {
+  S.tool = t; selectButton('tools', t === 'relocate_dest' ? 'relocate' : t);
+  controls.enableRotate = t === 'view';
+  document.querySelectorAll('#tool-params > div').forEach((d) => d.classList.toggle('show',
+    d.dataset.for === t || (t === 'relocate_dest' && d.dataset.for === 'relocate')));
+  $('rl-paint').classList.toggle('active', t === 'relocate_dest');
+  $('tool-hint').textContent = t === 'view' ? '左ドラッグ＝回転、右ドラッグ＝移動、ホイール＝拡大。2D地図クリックで移動。'
+    : t === 'levee' ? '河道に沿って塗ると、範囲内の河道セルに堤防を設置（樋門付き）'
+    : t === 'retention' ? '河道沿いの土地を塗る（建物用地・河道・水域は除外）。隣接する河道の洪水を貯める'
+    : t === 'paddy_dam' ? '水田セルのみ有効（他の土地利用は無視）'
+    : t === 'relocate_dest' ? '移転先にする範囲を塗る。終わったら「🏠 移転」で移転元を塗る'
+    : t === 'erase' ? '塗った範囲の施策を取り消し' : '左ドラッグで塗る（3D・2D地図）。右ドラッグ＝移動';
+}
+document.querySelectorAll('#tools button, #ops button').forEach((b) => b.onclick = () => selectTool(b.dataset.tool));
+function syncRelocateUI() {
+  const v = $('rl-dest').value;
+  $('rl-dens-l').style.display = v === 'new' ? '' : 'none';
+  $('rl-paint').style.display = v === 'painted' ? '' : 'none';
+  $('rl-hint').textContent = v === 'new' ? '浸水しない高台（HAND>10 m・現況で浸水なし・勾配8%以下）の農地・森林等を、移転元に近い順に宅地造成（建物用地に変更）。市街地（居住誘導区域の代替）から人口が出ていくため、居住集約度は下がる。跡地は緑地化。'
+    : v === 'existing' ? '浸水しない既存の市街地（HAND>10 m・現況で浸水なし）へ、人口に比例して移す（居住誘導区域への集約）。人口が市街地内にとどまるため、居住集約度は変わらない。跡地は緑地化。'
+    : '「🎯 移転先を塗る」で塗った範囲へ均等に移す（建物用地以外は建物用地に変更）。市街地の外なら居住集約度は下がる。低地を塗った場合は結果に注意が出る。跡地は緑地化。';
+}
+$('rl-dest').onchange = syncRelocateUI;
+$('ret-auto').onchange = () => { $('ret-q-l').style.display = $('ret-auto').checked ? 'none' : ''; };
+$('ret-q-l').style.display = 'none';
+$('rl-paint').onclick = () => selectTool(S.tool === 'relocate_dest' ? 'relocate' : 'relocate_dest');
+syncRelocateUI();
 document.querySelectorAll('#modes button').forEach((b) => b.onclick = () => { S.mode = b.dataset.mode; selectButton('modes', S.mode); colorize(); refreshBars(); });
 document.querySelectorAll('#which button').forEach((b) => b.onclick = () => { S.which = b.dataset.which; selectButton('which', S.which); setResultUI(); });
 document.querySelectorAll('#tabs button').forEach((b) => b.onclick = () => {
@@ -740,21 +777,36 @@ document.querySelectorAll('#tabs button').forEach((b) => b.onclick = () => {
   if (b.dataset.tab === 'flow') drawFlowCharts();
 });
 $('edit-costs').onclick = () => $('unit-costs').classList.toggle('show');
-$('brush').oninput = (e) => { $('brush-v').textContent = e.target.value; };
+$('brush').oninput = (e) => { $('brush-v').textContent = e.target.value; updateBrushInfo(); };
 $('exag').oninput = (e) => { S.exag = +e.target.value; $('exag-v').textContent = S.exag; updateTerrainHeights(); };
 $('show-assets').onchange = refreshBars;
 $('show-river').onchange = () => { riverLines.visible = $('show-river').checked; refreshBars(); drawMinimapOverlay(); };
 $('show-fac').onchange = () => { refreshLegend(); drawMinimapOverlay(); };
 $('run').onclick = runScenario;
 $('clear').onclick = () => { S.edits = []; S.scen = null; renderEdits(); setResultUI(); };
-$('event').onchange = (e) => { S.event = e.target.value; runBaseline(); };
-$('climate').onchange = () => { syncClimateInputs(); S.scen = null; runBaseline(); };
-$('cl-apply').onclick = () => { S.scen = null; runBaseline(); };
-$('basin').onchange = (e) => loadBasin(e.target.value);
+$('event').onchange = (e) => { S.event = e.target.value; invalidateResults('洪水イベントを変更しました'); };
+$('climate').onchange = () => { syncClimateInputs(); invalidateResults('気候条件を変更しました'); };
+$('cl-apply').onclick = () => { invalidateResults('気候条件を変更しました'); };
+$('basin').onchange = (e) => { S.res = null; loadBasin(e.target.value); };
+$('res').onchange = (e) => {
+  if (S.edits.length && !confirm('メッシュを変えると、塗った施策はリセットされます。続けますか？')) { $('res').value = S.res; return; }
+  S.res = +e.target.value; loadBasin(S.basin);
+};
+function updateBrushInfo() {
+  if (S.st) $('brush-m').textContent = `（半径 約${Math.round(+$('brush').value * S.st.dx + S.st.dx / 2)} m）`;
+}
 
 async function loadBasin(key) {
-  setProgress(0.02, '流域データ読み込み中（初回は DEM・土地利用・資産・施設データを処理）…');
-  const st = await getJSON(`/api/basin/${key}`);
+  $('run').disabled = true;
+  setProgress(0.01, '流域データを準備中…');
+  const { job } = await getJSON('/api/prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ basin: key, res: S.res }) });
+  if (job) await pollJob(job, '流域データの準備');
+  setProgress(0.98, '流域データを受信・描画中…');
+  const st = await getJSON(`/api/basin/${key}${S.res ? `?res=${S.res}` : ''}`);
+  S.res = st.res;
+  $('res').innerHTML = st.resolutions.map((o) => `<option value="${o.res}">${o.res} m（${o.label}）</option>`).join('');
+  $('res').value = st.res;
   st.mask = dec(st.mask, Uint8Array); st.landclass = dec(st.landclass, Uint8Array);
   st._z = dec(st.z, Float32Array); st.hand = dec(st.hand, Float32Array);
   S.fc = dec(st.flood_cells, Int32Array); S.hh = dec(st.households, Float32Array);
@@ -766,12 +818,15 @@ async function loadBasin(key) {
   S.zmin = zmin; S.zmax = zmax;
   $('basin-info').textContent = `流域面積 ${st.area_km2.toFixed(0)} km²、${st.nx}×${st.ny} セル（${st.dx} m）、河道 ${st.river.ri.length} セル、人口 ${Math.round(st.population_total).toLocaleString()}、世帯 ${Math.round(st.households_total).toLocaleString()}、資産 ${st.asset_total_oku.toFixed(0)} 億円、ダム ${Object.keys(st.dams).length}`;
   $('basin-note').textContent = st.note || '';
+  $('res-note').textContent = st.res_note || '';
   $('event').innerHTML = st.events.map((e) => `<option value="${e.key}">${e.label}</option>`).join('');
   const pref = st.events.find((e) => e.role === 'validation' && /20(19|20)$/.test(e.key)) || st.events[st.events.length - 1];
   $('event').value = pref.key; S.event = pref.key;
-  setupMinimap(); buildTerrain(); renderEdits(); buildUnitCostEditor(); colorize(); refreshBars();
+  updateBrushInfo(); setupMinimap(); buildTerrain(); renderEdits(); buildUnitCostEditor(); colorize(); refreshBars();
   S.baseCurrent = null; syncClimateInputs();
-  runBaseline();
+  S.mode = 'landuse'; selectButton('modes', 'landuse'); setResultUI();
+  $('run').disabled = false;
+  setProgress(1, '流域データの準備完了。施策を塗って「▶ 洪水計算を実行」（現況と施策ありを計算します。施策なしでも現況を計算できます）');
 }
 async function init() {
   resize();

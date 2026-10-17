@@ -20,12 +20,18 @@ class Dam:
                              q_cut, otherwise pass inflow and drain storage)
               S >= capacity: Qout = Qin                        (full: pass-through)
     `capacity` is the flood-control capacity [m3] above the initial storage.
+
+    Off-channel retention basin (遊水地, `release_q` set): only the excess over
+    q_cut enters the basin over the overflow weir, Qout = min(Qin, q_cut); the
+    stored water drains back (排水門) only while Qin < release_q, at most
+    release_q - Qin, so draining never raises the flow above release_q.
     """
     k: int
     capacity: float
     q_cut: float
     storage0: float = 0.0
     name: str = ""
+    release_q: float | None = None
 
 
 @dataclass
@@ -197,8 +203,11 @@ class Simulation:
             c_r, dts_r = K.river_fluxes(self.hr, r.zb, r.width, r.length, r.n_river, r.dn,
                                         r.outlet_slope, dt, inertial, num.limiter_frac,
                                         num.h_dry, self.Q, self.bc_stage)
-            for dm in self.dams:          # dam link is controlled by the operation rule
-                self.Q[dm.k] = 0.0
+            for n, dm in enumerate(self.dams):   # dam link is controlled by the operation rule
+                if dm.release_q is None:
+                    self.Q[dm.k] = 0.0
+                else:                            # 遊水地: off-channel, divert the excess over the weir
+                    self._retention_divert(n, dm, dt)
             mb.river_outflow += K.apply_river_fluxes(self.hr, r.width, r.length, r.dn,
                                                      self.Q, dt)
             if self.dams:
@@ -223,6 +232,9 @@ class Simulation:
         vout = 0.0
         for n, dm in enumerate(self.dams):
             k = dm.k
+            if dm.release_q is not None:
+                self._operate_retention(n, dm, dt)
+                continue
             vin = self.hr[k] * r.width[k] * r.length[k]
             self.hr[k] = 0.0
             self.dam_S[n] += vin
@@ -241,6 +253,42 @@ class Simulation:
             self.Q[k] = v / dt
             self.dam_qin[n], self.dam_qout[n] = qin, v / dt
         return vout
+
+    def _retention_divert(self, n, dm, dt):
+        """Off-channel retention basin (遊水地) at river cell k, before the channel
+        fluxes are applied: of the discharge Q[k] about to leave k, the part above
+        q_cut flows over the weir into the basin (taken from cell k itself, so the
+        downstream water level is not drawn down)."""
+        r = self.d.river
+        k = dm.k
+        q = self.Q[k]
+        take = 0.0
+        if q > dm.q_cut and self.dam_S[n] < dm.capacity:
+            # the weir inflow tapers off as the basin water level approaches the
+            # river (last 20 % of the capacity) instead of stopping abruptly, and
+            # never drains more than half of the channel cell in one step
+            fill = self.dam_S[n] / dm.capacity
+            eff = min(1.0, (1.0 - fill) / 0.2)
+            take = min(eff * (q - dm.q_cut) * dt, dm.capacity - self.dam_S[n],
+                       0.5 * max(self.hr[k], 0.0) * r.width[k] * r.length[k])
+            self.hr[k] -= take / (r.width[k] * r.length[k])
+            self.dam_S[n] += take
+            self.Q[k] = q - take / dt
+        self.dam_qin[n], self.dam_qout[n] = q, self.Q[k]
+
+    def _operate_retention(self, n, dm, dt):
+        """After the channel step: the basin drains back (排水門) into the cell below
+        the weir while the channel discharge is below release_q."""
+        r = self.d.river
+        k = dm.k
+        q = self.Q[k]
+        if q < dm.release_q and self.dam_S[n] > 0.0 and self.dam_qin[n] <= dm.q_cut:
+            t = r.dn[k] if r.dn[k] >= 0 else k
+            v = min(self.dam_S[n], (dm.release_q - q) * dt)
+            self.hr[t] += v / (r.width[t] * r.length[t])
+            self.dam_S[n] -= v
+            self.Q[k] = q + v / dt
+            self.dam_qout[n] = self.Q[k]
 
     # ------------------------------------------------------------------- run
     def run(self, t_end: float, gauges: dict[str, int] | None = None,

@@ -1,6 +1,7 @@
 """Run one registered flood event and score it against observed discharge.
 
 python scripts/run_event.py kusu_2018 --tag base --set forest.n=0.2 river.cw=8
+python scripts/run_event.py kusu_2020 --preset --res 500      # coarser grid (default 250 m)
 """
 import argparse
 import json
@@ -20,11 +21,11 @@ from rri_sim import climate as CL
 
 
 def run_event(event_key, tag="base", sets=None, threshold=None, save=True, verbose=True,
-              climate=None):
+              climate=None, res=None):
     """climate: rri_sim.climate.ClimateScenario applied from eval_start (spin-up unchanged
-    unless climate.apply_to_spinup)."""
+    unless climate.apply_to_spinup).  res: grid size [m] (default: the basin's, 250 m)."""
     ev = EVENTS[event_key]
-    d, meta, b = build(ev.basin, sets, threshold)
+    d, meta, b = build(ev.basin, sets, threshold, res=res)
     T0 = pd.Timestamp(ev.start)
     start = str(T0 + pd.Timedelta(hours=1))
     data, stations = collect_gauges(b["cfg"].bbox, start, ev.end, mlit_suikei=b["mlit_suikei"],
@@ -57,7 +58,7 @@ def run_event(event_key, tag="base", sets=None, threshold=None, save=True, verbo
     rain_t = T0 + pd.to_timedelta(rain.edges[:-1], unit="s")
     rain_on_t = pd.Series(bm, index=rain_t).reindex(times).values
     summary = {"event": event_key, "role": ev.role, "tag": tag, "overrides": sets or [],
-               "threshold": float(b["cfg"].river_threshold_km2),
+               "threshold": float(b["cfg"].river_threshold_km2), "res_m": float(d.dx),
                "cells": int(d.mask.sum()), "river_cells": d.river.n, "steps": res.n_steps,
                "wall_s": wall, "mass_rel_err": res.mass.relative_error,
                "rain_eval_mm": float(np.nansum(rain_on_t[w])), "scores": scores,
@@ -93,6 +94,7 @@ if __name__ == "__main__":
     ap.add_argument("--tag", default="base")
     ap.add_argument("--set", nargs="*")
     ap.add_argument("--threshold", type=float)
+    ap.add_argument("--res", type=float, help="grid size [m] (default 250; parameters were calibrated at 250 m)")
     ap.add_argument("--preset", action="store_true", help="use workflow.PRESETS for the basin")
     ap.add_argument("--climate", choices=["current", "2C", "4C", "custom"], default="current",
                     help="MLIT/JMA preset (2C, 4C) or custom with --rain-factor/--gamma/--slr")
@@ -112,4 +114,5 @@ if __name__ == "__main__":
     if a.factor_raster:
         clim.name, clim.source = "custom", f"factor raster {a.factor_raster}"
         clim.factor_field = a.factor_raster        # resolved to the grid inside run_event
-    run_event(a.event, a.tag, sets, thr, climate=clim)
+    tag = a.tag if a.res is None or a.tag != "base" else f"base_{a.res:.0f}m"
+    run_event(a.event, tag, sets, thr, climate=clim, res=a.res)

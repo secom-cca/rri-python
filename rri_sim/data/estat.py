@@ -66,9 +66,12 @@ def _num(s):
 def distribute_to_grid(values: dict, transform, shape, crs, weight=None):
     """Distribute mesh totals {code: value} onto model cells whose centres
     fall inside each mesh, proportionally to `weight` (e.g. built-up fraction,
-    manual 4.2(3)); uniform if all weights are zero."""
+    manual 4.2(3)); uniform if all weights are zero.  A mesh that contains no
+    cell centre (cells coarser than the mesh) goes to the cell containing the
+    mesh centre, so totals are conserved on any grid."""
     from pyproj import Transformer
     tr = Transformer.from_crs(crs, "EPSG:6668", always_xy=True)
+    inv = Transformer.from_crs("EPSG:6668", crs, always_xy=True)
     ny, nx = shape
     X = transform.c + (np.arange(nx) + 0.5) * transform.a
     Y = transform.f + (np.arange(ny) + 0.5) * transform.e
@@ -83,6 +86,11 @@ def distribute_to_grid(values: dict, transform, shape, crs, weight=None):
         s, n, wl, e = mesh_bounds(code)
         m = (lat >= s) & (lat < n) & (lon >= wl) & (lon < e)
         if not m.any():
+            x, y = inv.transform(0.5 * (wl + e), 0.5 * (s + n))
+            i = int(np.floor((y - transform.f) / transform.e))
+            j = int(np.floor((x - transform.c) / transform.a))
+            if 0 <= i < ny and 0 <= j < nx:
+                out[i, j] += val
             continue
         ww = w[m]
         if ww.sum() <= 0:

@@ -28,9 +28,9 @@ button:disabled { opacity: .5; cursor: wait; }
   border-bottom: 1px dashed var(--line); }
 #edits li .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
 #edits li button { border: 0; background: none; color: var(--danger); cursor: pointer; }
-#progress { margin-top: 8px; height: 18px; background: #eef1f3; border-radius: 4px; position: relative; overflow: hidden; }
-#bar { height: 100%; width: 0; background: #9cc3f0; transition: width .3s; }
-#pmsg { position: absolute; inset: 0; font-size: 11px; display: flex; align-items: center; padding-left: 6px; }
+#progress { margin-top: 8px; min-height: 18px; background: #eef1f3; border-radius: 4px; position: relative; overflow: hidden; }
+#bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #9cc3f0; transition: width .3s; }
+#pmsg { position: relative; display: block; font-size: 11px; line-height: 1.45; padding: 3px 6px; white-space: normal; }
 #view { position: relative; overflow: hidden; background: #dfe6ea; }
 #view canvas { display: block; }
 #legend { position: absolute; left: 12px; top: 12px; background: rgba(255,255,255,.9); padding: 6px 8px;

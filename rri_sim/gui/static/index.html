@@ -21,9 +21,11 @@
 
     <section>
       <label>流域 <select id="basin"></select></label>
+      <label>計算メッシュ <select id="res"></select></label>
       <label>洪水イベント <select id="event"></select></label>
       <div class="hint" id="basin-info"></div>
       <div class="note" id="basin-note"></div>
+      <div class="note" id="res-note"></div>
     </section>
 
     <section>
@@ -59,19 +61,28 @@
         <button data-tool="levee" title="範囲内の河道に堤防を設置">🧱 堤防</button>
         <button data-tool="retention" title="遊水地：掘削＋越流堤">◯ 遊水地</button>
       </div>
-      <label>ブラシ半径 <input id="brush" type="range" min="0" max="8" value="2"> <span id="brush-v">2</span> セル</label>
+      <label>ブラシ半径 <input id="brush" type="range" min="0" max="8" value="2"> <span id="brush-v">2</span> セル <span class="hint" id="brush-m"></span></label>
       <div id="tool-params">
         <div data-for="forest"><label>新規森林の粗度 n <input id="fo-n" type="number" value="0.4" step="0.05" min="0.05" max="1"></label>
           <label>森林土層厚 <input id="fo-soil" type="number" value="1.0" step="0.1" min="0.2" max="3"> m</label>
           <div class="hint">既存の森林・水域は対象外。校正済み山地森林とは別クラスとして計算。</div></div>
         <div data-for="paddy_dam"><label>貯留深 <input id="pd-store" type="number" value="15" step="1" min="1" max="30"> cm</label>
           <label>最大放流量 <input id="pd-rel" type="number" value="5" step="0.5" min="0.5" max="50"> mm/h</label></div>
-        <div data-for="relocate"><div class="hint">世帯・事業所を最寄りの安全な市街地（HAND&gt;10 m かつ現況で浸水なし）へ移し、跡地は緑地化。</div></div>
+        <div data-for="relocate"><label>移転先 <select id="rl-dest">
+            <option value="new">高台の新規造成地（自動）</option>
+            <option value="existing">既存の安全な市街地へ集約（自動）</option>
+            <option value="painted">地図で指定した場所</option></select></label>
+          <label id="rl-dens-l">造成地の人口密度 <input id="rl-dens" type="number" value="40" step="5" min="5" max="200"> 人/ha</label>
+          <button id="rl-paint" class="small" style="display:none">🎯 移転先を塗る</button>
+          <div class="hint" id="rl-hint"></div></div>
+        <div data-for="relocate_dest"><div class="hint">移転先にする範囲を塗る（河道・水域は除く）。移転元の「移転」は「地図で指定した場所」を選んで塗ること。塗り終えたら「🏠 移転」に戻る。</div></div>
         <div data-for="raise"><label>嵩上げ高 <input id="raise-h" type="number" value="1.0" step="0.5" min="0.5" max="5"> m</label>
           <label class="chk"><input id="raise-terrain" type="checkbox"> 盛土（地盤ごと上げ、流れにも影響）</label></div>
         <div data-for="levee"><label>堤防高（地盤から） <input id="levee-h" type="number" value="3.0" step="0.5" min="0.5" max="15"> m</label></div>
-        <div data-for="retention"><label>掘削深 <input id="ret-d" type="number" value="3.0" step="0.5" min="0.5" max="10"> m</label>
-          <label>越流堤の高さ <input id="ret-inlet" type="number" value="1.5" step="0.5" min="0" max="10"> m</label></div>
+        <div data-for="retention"><label>貯留深（掘削＋周囲堤） <input id="ret-d" type="number" value="3.0" step="0.5" min="0.5" max="10"> m</label>
+          <label class="chk"><input id="ret-auto" type="checkbox" checked> 越流開始流量を自動設定（この洪水で容量がちょうど満杯になる流量。完全予見のため効果は最大＝楽観的）</label>
+          <label id="ret-q-l">越流開始流量 <input id="ret-q" type="number" value="70" step="5" min="10" max="100"> % （現況ピーク流量比）</label>
+          <div class="hint">隣接する最大の河道から、流量が越流開始流量を超えた分だけ越流堤で取り込み（容量＝面積×貯留深）、河道の流量がその半分を下回ってから排水する。容量が小さいとピーク前に満杯になり効果が出ない（結果のログに必要水量を表示）。建物用地・河道・水域は用地にできない。</div></div>
       </div>
       <div class="hint" id="tool-hint">「視点」でドラッグ＝回転。施策選択中は左ドラッグで塗る（3D・2D地図どちらでも可、右ドラッグ＝移動）。</div>
     </section>

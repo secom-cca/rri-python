@@ -4,7 +4,10 @@ Livability (生活利便性) follows the indicator set of 国土交通省「都�
 関するハンドブック」(2014):
   - 生活サービス施設の徒歩圏人口カバー率 (徒歩圏 = 800 m)          -> walk coverage
   - travel time by car to the nearest facility (rural basins are car-based)
-  - 居住を誘導する区域の人口密度 / 利用圏平均人口密度                -> 居住集約度
+  - 居住を誘導する区域の人口密度                                     -> 居住集約度
+    (区域 = `zone`, by default the built-up land of the current land use as a
+    proxy of 居住誘導区域; density relative to the DID criterion 40 人/ha.
+    Moving people out of the zone lowers it, moving them within it does not.)
 for four service types: 医療, 教育, 商業, 公共サービス.
 Additionally (安全・安心 分野):
   - 防災上危険性が懸念される地域に居住する人口の割合 (max depth >= 0.5 m)
@@ -127,11 +130,13 @@ def walk_speed(landclass, lc_names, road_frac, p: AccessParams, depth=None):
 
 
 def livability(population, landclass, lc_names, road_frac, facility_cells: dict, dx, dy,
-               mask, p: AccessParams | None = None, flood_depth=None) -> dict:
+               mask, p: AccessParams | None = None, flood_depth=None, zone=None) -> dict:
     """Livability score and raw indicators.
 
     facility_cells: {"medical": idx, "school": idx, "commercial": idx, "public": idx}
     flood_depth   : max inundation depth [m] for the safety indicators (optional).
+    zone          : residential zone (居住誘導区域) mask for 居住集約度; default = the
+                    built-up cells of `landclass`.
     """
     p = p or AccessParams()
     pop = np.where(mask, np.nan_to_num(population), 0.0)
@@ -155,9 +160,16 @@ def livability(population, landclass, lc_names, road_frac, facility_cells: dict,
         comps.append(a)
     cell_ha = dx * dy / 1e4
     dens = pop / cell_ha
-    pwd = float((pop * dens).sum() / P)                    # 人口加重平均密度 [人/ha]
-    conc = min(1.0, pwd / p.density_ref_per_ha)
+    pwd = float((pop * dens).sum() / P)                    # 人口加重平均密度 [人/ha] (reference)
+    if zone is None:
+        zone = np.asarray(landclass) == list(lc_names).index("urban")
+    zone = np.asarray(zone, bool) & np.asarray(mask, bool)
+    zone_ha = float(zone.sum() * cell_ha)
+    zone_density = float(pop[zone].sum() / zone_ha) if zone_ha > 0 else 0.0
+    conc = min(1.0, zone_density / p.density_ref_per_ha)
     out["population_weighted_density_per_ha"] = pwd
+    out["zone_density_per_ha"] = zone_density             # 居住誘導区域（代替: 現況の建物用地）の人口密度
+    out["zone_population_share"] = float(pop[zone].sum() / P)
     out["concentration"] = conc
     comps.append(conc)
     out["score"] = 100.0 * float(np.mean(comps))

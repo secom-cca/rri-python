@@ -25,7 +25,7 @@ UNIT_COSTS = {
     "levee_crest_m": {"value": 5.0, "label": "堤防天端幅", "unit": "m", "basis": "河川管理施設等構造令の目安"},
     "levee_slope": {"value": 2.0, "label": "法勾配（1:n）", "unit": "-", "basis": "構造令の標準 2割"},
     "land_yen_m2": {"value": 5000.0, "label": "用地費（農地・山林）", "unit": "円/m²", "basis": "仮定（地方部の農地価格の目安）"},
-    "excavation_yen_m3": {"value": 1500.0, "label": "遊水地 掘削・運搬・処分", "unit": "円/m³",
+    "excavation_yen_m3": {"value": 1500.0, "label": "遊水地 掘削・周囲堤（貯留容量あたり）", "unit": "円/m³",
                           "basis": "掘削319–777円/m³（工事設計書）＋運搬・残土処分を仮定"},
     "weir_yen_m": {"value": 1.0e6, "label": "越流堤", "unit": "円/m", "basis": "仮定"},
     "paddy_dam_init_yen_10a": {"value": 5000.0, "label": "田んぼダム 調整板設置", "unit": "円/10a", "basis": "仮定（調整板 数千円/枚、10aに1枚）"},

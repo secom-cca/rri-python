@@ -54,9 +54,10 @@ GUI で使う流域・洪水イベントごとに、データ取得 → 流域�
 - 玖珠川の他のイベント（`kusu_2018`, `kusu_2012`, `kusu_2021`）は、同じ流域モデルを使い回すため数分で済む。
 - 成功すると最後に次のような行が出る（玖珠川の例）。値がこれと一致すれば正しく構築されている。
   ```
-  session 92s: cells 8448, households 10124, population 25783, ...
-  baseline 141s (sim 29s): damage 305 億円, inundated 17.6 km2, livability 52.1, ecology 69.0, ..., mass err -1.0e-14
+  session 92s: res 250 m, cells 8448, households 10957, population 27926, ...
+  baseline 141s (sim 29s): damage 312 億円, inundated 17.6 km2, ..., mass err 1e-14 程度
   ```
+- `--res 500` を付けると 500 m メッシュ用のキャッシュを作る（GUI の「計算メッシュ」, [08_resolution.md](08_resolution.md)）。
 - prewarm を省略しても GUI は動くが、初めてその流域を選んだときに同じ処理が GUI 内で走り、長時間待つことになる。
 
 ### 4. GUI の起動

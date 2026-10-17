@@ -29,7 +29,7 @@ rri_sim/
   data/           gsi_dem, mlit_water, jma, landuse, estat（キャッシュ付き取得）
 scripts/          run_event.py, calibrate.py, damage_from_result.py, compare_schemes_levee.py
 tests/            検証テスト（解析解・V字流域・保存性・被害率）
-docs/             01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI / 06 指標・事業費 / 07 気候変動
+docs/             00 セットアップ / 01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI / 06 指標・事業費 / 07 気候変動 / 08 メッシュサイズ
 ```
 
 ## 3D GUI（施策を塗って洪水計算・被害額を比較）
@@ -43,7 +43,7 @@ clone 直後に GUI を動かすまでの手順（環境構築・流域ごとの
 森林化・田んぼダム・住宅移転/嵩上げ・堤防・遊水地を地図上（3D／2D）で塗り、洪水計算を実行して、
 浸水深の時間変化、全観測所の流量、被害額、**事業費**、**Livability / Ecology Score**（都市構造の評価に関するハンドブック準拠の指標）を
 現況と比較できる。**気候変動シナリオ**（国交省提言の降雨量変化倍率 2℃/4℃、任意倍率、強雨強調、海面上昇）の下でも計算できる。
-対象: 玖珠川、阿武隈川上流、**筑後川全域**、**阿武隈川全域**。詳細は [docs/05_gui.md](docs/05_gui.md)、[docs/06_indicators.md](docs/06_indicators.md)。
+対象: 玖珠川、阿武隈川上流、**筑後川全域**、**阿武隈川全域**。計算メッシュは 125／250（標準）／500／1000 m から選べる（500 m で計算時間 1/4〜1/20, [docs/08](docs/08_resolution.md)）。詳細は [docs/05_gui.md](docs/05_gui.md)、[docs/06_indicators.md](docs/06_indicators.md)。
 
 ![GUI](docs/figures/gui_damage.png)
 
@@ -53,6 +53,7 @@ clone 直後に GUI を動かすまでの手順（環境構築・流域ごとの
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest                       # 検証テスト
 .venv/bin/python scripts/run_event.py kusu_2020  # 玖珠川 2020年7月豪雨（データ自動取得）
+.venv/bin/python scripts/run_event.py kusu_2020 --preset --res 500                # 500 mメッシュ（高速）
 .venv/bin/python scripts/calibrate.py sample --event kusu_2018 --n 40
 .venv/bin/python scripts/run_event.py chikugo_2020 --preset --climate 4C            # 4℃上昇（九州北西部 ×1.4, 海面+0.73 m）
 .venv/bin/python scripts/run_event.py kusu_2020 --preset --climate custom --rain-factor 1.2

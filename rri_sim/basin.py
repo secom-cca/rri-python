@@ -36,6 +36,10 @@ class BasinConfig:
     coast_max_elev_m: float = 10.0
     coast_slope: float = 1e-3
     gauges: dict = field(default_factory=dict)    # name -> (lon, lat)
+    # catchment areas [km2] of gauges (from the 250 m model): snapping picks the
+    # river cell whose upstream area is closest to these, so that coarse grids do
+    # not jump onto a larger river at a confluence.  The outlet uses expected_area_km2.
+    gauge_area_km2: dict = field(default_factory=dict)
 
 
 def upstream_mask(fdir, i0, j0):
@@ -112,9 +116,22 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     acc = flow_accumulation(fdir, valid, cfg.res ** 2) / 1e6
     # snap outlet to max accumulation within radius
     r0, c0, _, _ = lonlat_to_rc(*cfg.outlet_lonlat, tf, crs)
-    rad = int(np.ceil(cfg.snap_radius_m / cfg.res))
-    sub = acc[max(r0 - rad, 0):r0 + rad + 1, max(c0 - rad, 0):c0 + rad + 1]
-    a, b = np.unravel_index(np.argmax(sub), sub.shape)
+    rad0 = int(np.ceil(cfg.snap_radius_m / cfg.res))
+    for rad in (rad0, 2 * rad0, 4 * rad0, 8 * rad0):
+        sub = acc[max(r0 - rad, 0):r0 + rad + 1, max(c0 - rad, 0):c0 + rad + 1]
+        if not cfg.expected_area_km2:
+            a, b = np.unravel_index(np.argmax(sub), sub.shape)
+            break
+        # closest to the expected catchment area (not simply the largest: on a coarse
+        # grid the snap window can reach the main river below a confluence).  On a
+        # coarse grid the river mouth may also exit the coast a few cells away:
+        # widen the window until the expected area is found (within 30%)
+        err = np.abs(np.log(np.maximum(sub, 1e-6) / cfg.expected_area_km2))
+        a, b = np.unravel_index(np.argmin(err), sub.shape)
+        if err[a, b] < np.log(1.3):
+            break
+    if rad > rad0 and verbose:
+        print(f"[{cfg.name}] outlet: snapped with widened radius {rad} cells")
     ro, co = max(r0 - rad, 0) + a, max(c0 - rad, 0) + b
     ws = upstream_mask(fdir, ro, co)
     area = ws.sum() * cfg.res ** 2 / 1e6
@@ -175,15 +192,19 @@ def build_basin(cfg: BasinConfig, params: ModelParams | None = None, cache_dir: 
     for name, (lon, lat) in cfg.gauges.items():
         r, c, _, _ = lonlat_to_rc(lon, lat, tf_c, crs)
         rad0 = max(1, int(round(cfg.gauge_snap_m / cfg.res)))
+        target = cfg.gauge_area_km2.get(name)
         for rr in (rad0, 2 * rad0, 4 * rad0):
             try:
-                g[name] = snap_to_river(river, r, c, acc_ws, rr)
-                if rr > rad0 and verbose:
-                    print(f"[{cfg.name}] gauge {name}: snapped with widened radius {rr} cells")
-                break
+                g[name] = snap_to_river(river, r, c, acc_ws, rr, target)
             except ValueError:
                 continue
-        else:
+            # widen also when the nearest river cells are a tributary (coarse grids)
+            if target and abs(np.log(river.area_km2[g[name]] / target)) > np.log(1.3) and rr < 4 * rad0:
+                continue
+            if rr > rad0 and verbose:
+                print(f"[{cfg.name}] gauge {name}: snapped with widened radius {rr} cells")
+            break
+        if name not in g:
             import warnings
             warnings.warn(f"[{cfg.name}] gauge {name} ({lon}, {lat}) is not near the river network; skipped")
     meta["gauge_index"] = g
@@ -203,13 +224,16 @@ def floodplain_inundation(max_depth, hand, depth_min=0.1, hand_max=10.0):
     return np.where((d >= depth_min) & (np.nan_to_num(hand, nan=1e9) <= hand_max), d, 0.0)
 
 
-def snap_to_river(river, r, c, acc_km2, rad):
-    """River cell with the largest upstream area within rad cells of (r, c)."""
-    best, bk = -1.0, -1
+def snap_to_river(river, r, c, acc_km2, rad, target_km2=None):
+    """River cell within rad cells of (r, c): the one whose upstream area is
+    closest to target_km2 if given, else the one with the largest upstream area."""
+    best, bk = -np.inf, -1
     for k in range(river.n):
         if abs(river.ri[k] - r) <= rad and abs(river.rj[k] - c) <= rad:
-            if river.area_km2[k] > best:
-                best, bk = river.area_km2[k], k
+            a = river.area_km2[k]
+            score = -abs(np.log(a / target_km2)) if target_km2 else a
+            if score > best:
+                best, bk = score, k
     if bk < 0:
         raise ValueError("no river cell near gauge")
     return bk

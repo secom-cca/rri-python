@@ -1,16 +1,21 @@
 """Pre-compute GUI caches (domain, assets, indicator data, spin-up, baseline) for a basin/event.
 
-python scripts/prewarm_gui.py chikugo_whole chikugo_2020
+python scripts/prewarm_gui.py chikugo_whole chikugo_2020 [--res 500]
 """
-import sys
+import argparse
 import time
 
 from rri_sim.gui.engine import BasinSession
 
-basin, event = sys.argv[1], sys.argv[2]
+ap = argparse.ArgumentParser()
+ap.add_argument("basin")
+ap.add_argument("event")
+ap.add_argument("--res", type=float, help="grid size [m] (default: the basin's, 250 m)")
+a = ap.parse_args()
+basin, event = a.basin, a.event
 t = time.time()
-s = BasinSession(basin)
-print(f"session {time.time() - t:.0f}s: cells {int(s.d.mask.sum())}, households {s.assets.households.sum():.0f}, "
+s = BasinSession(basin, a.res)
+print(f"session {time.time() - t:.0f}s: res {s.res:.0f} m, cells {int(s.d.mask.sum())}, households {s.assets.households.sum():.0f}, "
       f"population {s.pop[s.d.mask].sum():.0f}, facilities { {k: len(v) for k, v in s.fac.items()} }", flush=True)
 t = time.time()
 r = s.run(event, progress=lambda f, m: None)

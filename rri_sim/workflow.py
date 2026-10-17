@@ -70,16 +70,52 @@ def apply_overrides(params, sets):
         setattr(target, attr, type(cur)(val) if not isinstance(cur, bool) else val == "True")
 
 
-def build(basin_key, sets=None, threshold=None, use_cache=False):
-    """Build a registered basin. Returns (domain, meta, basin_entry)."""
-    b = BASINS[basin_key]
-    cfg = b["cfg"]
+def default_res(basin_key) -> float:
+    return BASINS[basin_key]["cfg"].res
+
+
+def cache_key(basin_key, res=None) -> str:
+    """Cache-file stem for a basin at a grid resolution (the registered default
+    resolution keeps the bare basin key, so existing caches stay valid)."""
+    if res is None or float(res) == default_res(basin_key):
+        return basin_key
+    return f"{basin_key}_{float(res):.0f}m"
+
+
+def basin_config(basin_key, res=None, threshold=None):
+    """Registered BasinConfig with grid resolution / river threshold overridden
+    (a copy: the registry is never mutated)."""
+    from dataclasses import replace
+    cfg = BASINS[basin_key]["cfg"]
+    kw = {}
+    if res is not None:
+        kw["res"] = float(res)
+        # source DEM: zoom 13 (~20 m) is ample for >= 150 m cells; zoom 14 (DEM10B, ~10 m) below
+        kw["dem_zoom"] = 14 if float(res) < 150 else cfg.dem_zoom
     if threshold is not None:
-        cfg.river_threshold_km2 = threshold
+        kw["river_threshold_km2"] = threshold
+    return replace(cfg, **kw) if kw else cfg
+
+
+def _domain_path(basin_key, sets, cfg):
     import hashlib
+    b = BASINS[basin_key]
     sig = hashlib.sha1(("|".join(sets or []) + str(b.get("existing_levees")) + str(b.get("lowland_river_n")) + "w3coast").encode()).hexdigest()[:10]
-    key = f"{basin_key}_{cfg.res:.0f}_{cfg.river_threshold_km2}_{sig}"
-    path = CACHE / f"domain_{key}.pkl"
+    return CACHE / f"domain_{basin_key}_{cfg.res:.0f}_{cfg.river_threshold_km2}_{sig}.pkl"
+
+
+def domain_cached(basin_key, res=None) -> bool:
+    """Whether the preset model of a basin at `res` is already built (cache file exists)."""
+    p = PRESETS.get(basin_key, {"sets": [], "threshold": None})
+    return _domain_path(basin_key, p["sets"], basin_config(basin_key, res, p["threshold"])).exists()
+
+
+def build(basin_key, sets=None, threshold=None, use_cache=False, res=None):
+    """Build a registered basin. Returns (domain, meta, basin_entry).
+    `res` [m] overrides the registered grid resolution (default 250 m)."""
+    b = BASINS[basin_key]
+    cfg = basin_config(basin_key, res, threshold)
+    path = _domain_path(basin_key, sets, cfg)
     if use_cache and path.exists():
         with open(path, "rb") as f:
             d, meta = pickle.load(f)
@@ -93,6 +129,7 @@ def build(basin_key, sets=None, threshold=None, use_cache=False):
     params = ModelParams(land_classes=model_land_params())
     apply_overrides(params, sets)
     d, meta = build_basin(cfg, params, verbose=False)
+    meta["res"] = cfg.res
     nl = b.get("lowland_river_n")
     if nl:
         # Manning n of large lowland reaches is smaller than that of steep gravel
@@ -121,9 +158,9 @@ def build(basin_key, sets=None, threshold=None, use_cache=False):
     return d, meta, b
 
 
-def build_preset(basin_key, use_cache=True):
+def build_preset(basin_key, use_cache=True, res=None):
     p = PRESETS.get(basin_key, {"sets": [], "threshold": None})
-    return build(basin_key, p["sets"], p["threshold"], use_cache=use_cache)
+    return build(basin_key, p["sets"], p["threshold"], use_cache=use_cache, res=res)
 
 
 def boundary_conditions(basin_key, domain, meta, t0, t_end):
@@ -142,7 +179,7 @@ def boundary_conditions(basin_key, domain, meta, t0, t_end):
     for name, spec in b.get("dams", {}).items():
         row, col, _, _ = lonlat_to_rc(*spec["lonlat"], domain.transform, domain.crs)
         try:
-            k = snap_to_river(r, row, col, meta["acc_km2"], 4)
+            k = snap_to_river(r, row, col, meta["acc_km2"], max(2, round(1000.0 / domain.dx)))   # ~1 km
         except ValueError:
             continue
         dams.append(Dam(k=k, capacity=spec["capacity"], q_cut=spec["q_cut"], name=name))
