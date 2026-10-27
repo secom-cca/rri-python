@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流域治水チャレンジ</title>
+<link rel="stylesheet" href="/static/play.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header id="top">
+  <div class="brand">🌊 流域治水チャレンジ</div>
+  <ol id="steps">
+    <li data-step="stage">① ステージ</li><li data-step="brief">② 現状を知る</li>
+    <li data-step="plan">③ 計画をつくる</li><li data-step="result">④ 結果</li>
+  </ol>
+  <div id="hud">
+    <div class="hud-item" id="hud-stage"></div>
+    <div class="hud-item budget"><span>予算</span><div class="meter"><div id="budget-bar"></div></div><b id="budget-txt">—</b></div>
+    <div class="hud-item" id="hud-mission"></div>
+  </div>
+  <a class="expert" href="/" title="すべての設定ができる専門家向け画面">詳細画面 ↗</a>
+</header>
+
+<div id="app">
+  <main id="stage-area">
+    <div id="maps">
+      <figure class="map"><figcaption id="cap-a"></figcaption><div class="view3d" id="map-a"></div></figure>
+      <figure class="map" id="fig-b"><figcaption id="cap-b"></figcaption><div class="view3d" id="map-b"></div></figure>
+    </div>
+    <div id="map-bar">
+      <div class="seg" id="layers"></div>
+      <button id="reset-view" title="視点を最初に戻す">⟲ 視点</button>
+      <span class="hint" id="view-hint">ドラッグ＝回転、右ドラッグ＝移動、ホイール＝拡大</span>
+      <div id="timebar"><button id="play" class="round">▶</button><input id="time" type="range" min="-1" max="0" value="-1"><span id="time-l">期間最大</span></div>
+    </div>
+    <div id="legend"></div>
+    <div id="tip"></div>
+  </main>
+
+  <aside id="panel">
+    <!-- ① stage -->
+    <section data-view="stage">
+      <h1>ステージを選ぼう</h1>
+      <p class="lead">実際の川と過去の豪雨で、洪水被害を減らす計画を立てるゲームです。限られた予算で、どの施策をどこに行うかを考えよう。</p>
+      <div id="basin-cards" class="cards"></div>
+      <div class="field"><label>洪水イベント</label><select id="sel-event"></select></div>
+      <div class="field"><label>気候</label><div class="seg" id="seg-climate">
+        <button data-v="current" class="on">現在の気候</button><button data-v="2C">2℃上昇</button><button data-v="4C">4℃上昇</button></div></div>
+      <div class="field"><label>難しさ</label><div class="seg" id="seg-level">
+        <button data-v="easy">やさしい</button><button data-v="normal" class="on">ふつう</button><button data-v="hard">むずかしい</button></div></div>
+      <div class="field"><label>計算の細かさ</label><select id="sel-res"></select><div class="hint" id="res-hint"></div></div>
+      <button id="go-brief" class="primary big" disabled>この条件でスタート ▶</button>
+    </section>
+
+    <!-- loading / running -->
+    <section data-view="busy">
+      <h1 id="busy-title">計算中…</h1>
+      <div class="progress"><div id="busy-bar"></div></div>
+      <p id="busy-msg" class="hint"></p>
+      <div class="tipcard" id="busy-tip"></div>
+    </section>
+
+    <!-- ② brief -->
+    <section data-view="brief">
+      <h1>このままだと…</h1>
+      <p class="lead" id="brief-lead"></p>
+      <div class="kpis" id="brief-kpis"></div>
+      <div class="mission" id="brief-mission"></div>
+      <p class="hint">地図は何も対策しないときの最大浸水深です。どこが浸水しているか、家や田畑がどこにあるか、レイヤーを切り替えて確かめよう。</p>
+      <button id="go-plan" class="primary big">計画をつくる ▶</button>
+    </section>
+
+    <!-- ③ plan -->
+    <section data-view="plan">
+      <h1>施策を選ぼう</h1>
+      <div id="measure-cards" class="mcards"></div>
+      <div id="config" class="config"></div>
+      <h2>あなたの計画 <span id="plan-sum" class="hint"></span></h2>
+      <ul id="plan-list" class="plan"></ul>
+      <button id="go-run" class="primary big">この計画でシミュレーション ▶</button>
+      <div class="hint" id="run-hint"></div>
+    </section>
+
+    <!-- ④ result -->
+    <section data-view="result">
+      <div class="result-head"><div id="stars" class="stars"></div><div><div class="score-n" id="score-n"></div><div id="verdict"></div></div></div>
+      <canvas id="radar" height="210"></canvas>
+      <div class="kpis" id="res-kpis"></div>
+      <h2>ふりかえり</h2>
+      <ul id="comments" class="comments"></ul>
+      <div id="axes" class="axes"></div>
+      <h2>下流の川の流量（<span id="q-name"></span>）</h2>
+      <canvas id="hydro" height="150"></canvas>
+      <div class="row">
+        <button id="go-back" class="big">◀ 計画を見直す</button>
+        <button id="save-plan" class="primary big">この計画を記録</button>
+      </div>
+      <h2>記録した計画</h2>
+      <table id="records" class="records"></table>
+      <button id="go-stage" class="link">別のステージで遊ぶ</button>
+    </section>
+  </aside>
+</div>
+<div id="toast"></div>
+<script type="module" src="/static/play.js"></script>
+</body>
+</html>

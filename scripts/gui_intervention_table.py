@@ -45,7 +45,7 @@ cases = {
     "田んぼダム（全水田, 15 cm）": [{"type": "paddy_dam", "cells": paddy.tolist()}],
     "移転（低地の建物用地）": [{"type": "relocate", "cells": low_urban.tolist()}],
     "嵩上げ +1 m（同, 床高）": [{"type": "raise", "cells": low_urban.tolist(), "height": 1.0}],
-    "堤防 3 m（上流域200 km²以上）": [{"type": "levee", "cells": main_riv.tolist(), "height": 3.0}],
+    "堤防 既存+3 m（上流域200 km²以上）": [{"type": "levee", "cells": main_riv.tolist(), "height": 3.0}],
     "遊水地（貯留深3 m, 越流開始流量 自動）": [{"type": "retention", "cells": basin_cells, "depth": 3.0, "auto": True}],
 }
 print("| 施策 | 適用 | 被害額 [億円] | 浸水面積 [km²] | 床上世帯 | ピーク流量 小ヶ瀬 [m³/s] | 計算時間 [s] |")

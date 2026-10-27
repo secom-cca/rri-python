@@ -35,7 +35,8 @@ docs/             00 セットアップ / 01 定式化 / 02 データと計画 /
 ## 3D GUI（施策を塗って洪水計算・被害額を比較）
 
 ```bash
-.venv/bin/python -m rri_sim.gui      # → http://127.0.0.1:8765
+.venv/bin/python -m rri_sim.gui      # → http://127.0.0.1:8765        （専門家向け: すべての設定）
+                                     #   http://127.0.0.1:8765/play   （授業向けゲーム: 予算・ミッション・スコア）
 ```
 
 clone 直後に GUI を動かすまでの手順（環境構築・流域ごとの事前計算）は [docs/00_setup.md](docs/00_setup.md)。

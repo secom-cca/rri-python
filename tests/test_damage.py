@@ -47,6 +47,12 @@ def test_costs_levee_and_present_value():
     foot = u["levee_crest_m"] + 2 * u["levee_slope"] * 2.0
     lev = 1000 * (area * u["levee_fill_yen_m3"] + u["levee_fixed_yen_m"] + foot * u["land_yen_m2"])
     assert np.isclose(r["items"][0]["initial_yen"], lev)
+    # raising an existing 3 m levee by +1 m: only the extra section and footprint
+    up = C.estimate([{"type": "levee", "q": {"height_m": 1.0, "base_height_m": 3.0, "length_m": 1000.0}}])
+    sec = lambda h: h * (u["levee_crest_m"] + u["levee_slope"] * h)
+    extra = 1000 * ((sec(4.0) - sec(3.0)) * u["levee_fill_yen_m3"] + u["levee_fixed_yen_m"]
+                    + 2 * u["levee_slope"] * 1.0 * u["land_yen_m2"])
+    assert np.isclose(up["items"][0]["initial_yen"], extra)
     pdm = r["items"][1]
     assert np.isclose(pdm["pv_yen"], 1000 * u["paddy_dam_init_yen_10a"] + 1000 * u["paddy_dam_annual_yen_10a"] * C.ANNUITY)
     assert 21.4 < C.ANNUITY < 21.6     # 50 years at 4 %

@@ -65,7 +65,7 @@ def test_each_edit_applies_only_where_meaningful(session):
         if typ == "raise":
             assert np.allclose(floor, 1.45)
         if typ == "levee":
-            assert np.allclose(d.river.embankment, 4.0)
+            assert np.allclose(d.river.embankment, d0.river.embankment + 4.0)   # + on the existing levee
         if typ == "retention":
             riv = np.zeros(d0.shape, bool)
             riv[d0.river.ri, d0.river.rj] = True
@@ -151,3 +151,18 @@ def test_retention_basin_cuts_downstream_peak_and_conserves_mass(session):
     same = Simulation(d0, rain, dams=[noop]).run(12 * 3600, gauges={"out": out}, output_interval=600)
     assert np.allclose(same.gauge_q["out"], base.gauge_q["out"])            # no artefact of the structure
     assert abs(res.mass.relative_error) < 1e-12
+
+
+def test_estimate_costs_each_edit_without_simulating(session):
+    s = session
+    s.b, s._baseline = {}, {}
+    d0 = s.d
+    emb0 = d0.river.embankment.copy()
+    allc = list(range(d0.shape[0] * d0.shape[1]))
+    edits = [{"type": "levee", "cells": allc, "height": 1.0}, {"type": "paddy_dam", "cells": allc},
+             {"type": "levee", "cells": [], "height": 1.0}]
+    est = s.estimate("ev", edits, {})
+    per = est["edit_cost_yen"]
+    assert len(per) == 3 and per[0] > 0 and per[1] > 0 and per[2] == 0
+    assert np.isclose(sum(per), est["cost"]["pv_yen"])
+    assert np.allclose(s.d.river.embankment, emb0)       # the session's basin is untouched

@@ -76,6 +76,14 @@ RICE_YIELD_KG_PER_10A = {"福岡": 456, "佐賀": 487, "大分": 475, "熊本": 
                          "福島": 532, "宮城": 511}
 # 第6表 [千円/t]
 RICE_PRICE = 187.0
+# 畑作物の平均評価額 c [千円/a] (manual: regional value, user-supplied).  Derived for
+# 2020 as (耕種 − 米) 農業産出額 / 畑 耕地面積 per prefecture:
+#   農業産出額: 令和2年 生産農業所得統計 都道府県別農業産出額 (e-Stat statInfId 000032183954)
+#   畑面積    : 令和2年 耕地及び作付面積統計 田畑別耕地面積 (e-Stat statInfId 000032060248)
+# 福岡 (1584-344)億/15,600 ha, 佐賀 (873-227)/8,800, 熊本 (2186-361)/42,000,
+# 大分 (771-187)/15,800, 福島 (1667-762)/40,500, 宮城 (1176-795)/22,100.
+# 畑 includes orchards and meadows (as the model's 畑 = L03 その他の農用地).
+FIELD_VALUE_KYEN_PER_A = {"福岡": 79.5, "佐賀": 73.4, "熊本": 43.5, "大分": 37.0, "福島": 22.3, "宮城": 17.2}
 
 DEPTH_BIN_EDGES_ABOVE_FLOOR = np.array([0.5, 1.0, 2.0, 3.0])
 
@@ -170,23 +178,19 @@ class DamageResult:
         return float(np.nansum(self.total_map))
 
 
-def estimate_damage(max_depth, assets: AssetGrid, ground_slope=None,
-                    duration_days=None, floor_height=0.45) -> DamageResult:
-    """Direct damage [yen] per cell from the maximum inundation depth."""
-    h = np.nan_to_num(np.asarray(max_depth, float), nan=0.0)
+def _general(h, assets, gs, floor_height, gam, w=1.0):
+    """Damage [yen] of the depth-above-floor assets (house, household goods, car,
+    business, farm households) at depth h, times weight w (sub-grid share)."""
     shape = h.shape
-    zeros = np.zeros(shape)
-    gam = floor_correction(assets.mean_floors) if assets.mean_floors is not None else 1.0
-    gs = zeros if ground_slope is None else ground_slope
     idx = general_rate_index(h, floor_height)
     cat = {}
     if assets.floor_area_m2 is not None:
         v = assets.floor_area_m2 * HOUSE_VALUE_PER_M2[assets.prefecture] * 1e3 * gam
-        cat["house"] = v * house_rate(h, gs, floor_height)
+        cat["house"] = w * v * house_rate(h, gs, floor_height)
     if assets.households is not None:
         v = assets.households * HOUSEHOLD_GOODS_VALUE * 1e3 * gam
-        cat["household_goods"] = v * lookup(HOUSEHOLD_GOODS_RATES, idx)
-        cat["car"] = assets.households * CAR_VALUE * 1e3 * car_rate(h)
+        cat["household_goods"] = w * v * lookup(HOUSEHOLD_GOODS_RATES, idx)
+        cat["car"] = w * assets.households * CAR_VALUE * 1e3 * car_rate(h)
     if assets.employees:
         dep = np.zeros(shape)
         inv = np.zeros(shape)
@@ -194,24 +198,58 @@ def estimate_damage(max_depth, assets: AssetGrid, ground_slope=None,
             vd, vi = BUSINESS_VALUE_PER_EMPLOYEE[code]
             dep += n * vd * 1e3
             inv += n * vi * 1e3
-        cat["business_depreciable"] = dep * gam * lookup(BUSINESS_DEPRECIABLE_RATES, idx)
-        cat["business_inventory"] = inv * gam * lookup(BUSINESS_INVENTORY_RATES, idx)
+        cat["business_depreciable"] = w * dep * gam * lookup(BUSINESS_DEPRECIABLE_RATES, idx)
+        cat["business_inventory"] = w * inv * gam * lookup(BUSINESS_INVENTORY_RATES, idx)
     if assets.farm_households is not None:
-        cat["farm_depreciable"] = (assets.farm_households * FARM_VALUE[0] * 1e3
-                                   * lookup(FARM_DEPRECIABLE_RATES, idx))
-        cat["farm_inventory"] = (assets.farm_households * FARM_VALUE[1] * 1e3
-                                 * lookup(FARM_INVENTORY_RATES, idx))
-    dur = np.ones(shape) if duration_days is None else duration_days
+        cat["farm_depreciable"] = w * (assets.farm_households * FARM_VALUE[0] * 1e3
+                                       * lookup(FARM_DEPRECIABLE_RATES, idx))
+        cat["farm_inventory"] = w * (assets.farm_households * FARM_VALUE[1] * 1e3
+                                     * lookup(FARM_INVENTORY_RATES, idx))
+    return cat
+
+
+def _crops(h, assets, dur, w=1.0):
+    cat = {}
     if assets.paddy_area_m2 is not None:
         y = RICE_YIELD_KG_PER_10A.get(assets.prefecture)
         if y is not None:
             # area[m2]/1000 -> 10a units; kg -> t; 千円/t -> yen
             v = assets.paddy_area_m2 / 1000.0 * y / 1000.0 * RICE_PRICE * 1e3
-            cat["paddy"] = v * crop_rate(h, dur, "paddy")
-    if assets.field_area_m2 is not None and assets.field_value_kyen_per_a is not None:
-        v = assets.field_area_m2 / 100.0 * assets.field_value_kyen_per_a * 1e3
-        cat["field"] = v * crop_rate(h, dur, "field")
-    total = sum(cat.values()) if cat else zeros
+            cat["paddy"] = w * v * crop_rate(h, dur, "paddy")
+    c = assets.field_value_kyen_per_a
+    if c is None:
+        c = FIELD_VALUE_KYEN_PER_A.get(assets.prefecture)
+    if assets.field_area_m2 is not None and c is not None:
+        v = assets.field_area_m2 / 100.0 * c * 1e3
+        cat["field"] = w * v * crop_rate(h, dur, "field")
+    return cat
+
+
+def estimate_damage(max_depth, assets: AssetGrid, ground_slope=None,
+                    duration_days=None, floor_height=0.45, subgrid=None) -> DamageResult:
+    """Direct damage [yen] per cell from the maximum inundation depth.
+
+    subgrid = (offsets, level) from rri_sim.subgrid: buildings and farmland are
+    flooded by their own ground elevation within the cell (mean over the
+    quantiles) instead of the cell-uniform depth."""
+    h = np.nan_to_num(np.asarray(max_depth, float), nan=0.0)
+    gam = floor_correction(assets.mean_floors) if assets.mean_floors is not None else 1.0
+    gs = np.zeros(h.shape) if ground_slope is None else ground_slope
+    dur = np.ones(h.shape) if duration_days is None else duration_days
+    if subgrid is None:
+        cat = _general(h, assets, gs, floor_height, gam)
+        cat.update(_crops(h, assets, dur))
+    else:
+        from . import subgrid as SG
+        off, level = subgrid
+        cat = {}
+        for grp, fn in (("urban", lambda d, w: _general(d, assets, gs, floor_height, gam, w)),
+                        ("farm", lambda d, w: _crops(d, assets, dur, w))):
+            dq = SG.depths(h, off[grp], level)
+            for q in range(dq.shape[0]):
+                for k, v in fn(dq[q], 1.0 / dq.shape[0]).items():
+                    cat[k] = cat.get(k, 0.0) + v
+    total = sum(cat.values()) if cat else np.zeros(h.shape)
     return DamageResult(by_category=cat, total_map=np.asarray(total, float))
 
 

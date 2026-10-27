@@ -61,11 +61,14 @@ def estimate(edits_applied: list[dict], unit: dict | None = None) -> dict:
         q = e.get("q", {})
         init = annual = 0.0
         if t == "levee":
-            h = q["height_m"]
-            area = h * (u["levee_crest_m"] + u["levee_slope"] * h)          # m²/m
-            foot = u["levee_crest_m"] + 2 * u["levee_slope"] * h            # m
+            # raising from h0 (existing levee, 0 = none) to h0 + h: extra fill and footprint
+            h0 = q.get("base_height_m", 0.0)
+            h1 = h0 + q["height_m"]
+            sec = lambda x: x * (u["levee_crest_m"] + u["levee_slope"] * x) if x > 0 else 0.0   # m²/m
+            ft = lambda x: u["levee_crest_m"] + 2 * u["levee_slope"] * x if x > 0 else 0.0      # m
             L = q["length_m"]
-            init = L * (area * u["levee_fill_yen_m3"] + u["levee_fixed_yen_m"] + foot * u["land_yen_m2"])
+            init = L * ((sec(h1) - sec(h0)) * u["levee_fill_yen_m3"] + u["levee_fixed_yen_m"]
+                        + (ft(h1) - ft(h0)) * u["land_yen_m2"])
         elif t == "retention":
             init = (q["area_m2"] * q["depth_m"] * u["excavation_yen_m3"] + q["area_m2"] * u["land_yen_m2"]
                     + q["weir_length_m"] * u["weir_yen_m"]

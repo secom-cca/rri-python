@@ -23,6 +23,7 @@ const CAT_JP = { house: '家屋', household_goods: '家庭用品', car: '自動�
 const SVC_JP = { medical: '医療', school: '教育（小・中学校）', commercial: '商業', public: '公共サービス' };
 const FAC_COLOR = { medical: '#e11d48', school: '#2563eb', commercial: '#f59e0b', public: '#7c3aed' };
 const DEPTH_STOPS = [[0.1, '#bfe3ff'], [0.5, '#6cb6ff'], [1.0, '#2f80ed'], [2.0, '#1747a6'], [3.0, '#3b1a7a'], [5.0, '#5a0f5f']];
+const LEVEE_STOPS = [[0, '#e5e7eb'], [0.5, '#fde68a'], [2, '#f59e0b'], [4, '#c2410c'], [6, '#7f1d1d'], [10, '#3b0764']];
 const RIVER_STOPS = [[0.3, '#93c5fd'], [0.7, '#2563eb'], [0.95, '#facc15'], [1.05, '#dc2626']];
 
 // --------------------------------------------------------------------- state
@@ -200,22 +201,23 @@ function refreshBars() {
     scene.add(damageBars);
   }
   const emb = currentEmbankment(), r = S.st.river, nx = S.st.nx, cells = [], hs = [], cs = [];
+  const byH = S.mode === 'levee';
   for (let k = 0; k < r.ri.length; k++) if (emb[k] > 0.05) {
-    cells.push(r.ri[k] * nx + r.rj[k]); hs.push(Math.max(emb[k] / 1000 * S.exag * 6, 0.02)); cs.push(hex('#5b3a1a'));
+    cells.push(r.ri[k] * nx + r.rj[k]); hs.push(Math.max(emb[k] / 1000 * S.exag * 6, 0.02));
+    cs.push(byH ? lerpColor(LEVEE_STOPS, emb[k]) : hex('#5b3a1a'));
   }
-  if (cells.length) { leveeWalls = makeBars(cells, hs, cs, 0.6); leveeWalls.visible = $('show-river').checked; scene.add(leveeWalls); }
+  if (cells.length) { leveeWalls = makeBars(cells, hs, cs, 0.6); leveeWalls.visible = byH || $('show-river').checked; scene.add(leveeWalls); }
 }
 
 // ------------------------------------------------------------------- results
 function currentResult() { return S.which === 'base' ? S.base : (S.scen || S.base); }
 function currentHouseholds() { const r = currentResult(); return (r && r._hh) ? r._hh : S.hh; }
+// levee height above ground per river cell: existing levee (+ the painted levee measures when showing 施策)
 function currentEmbankment() {
-  const res = currentResult(), r = S.st.river, nx = S.st.nx;
-  const emb = Float32Array.from(res ? res.embankment : r.embankment);
-  for (const e of S.edits) if (e.type === 'levee') {
-    const set = new Set(e.cells);
-    for (let k = 0; k < r.ri.length; k++) if (set.has(r.ri[k] * nx + r.rj[k])) emb[k] = Math.max(emb[k], e.height);
-  }
+  const r = S.st.river, emb = Float32Array.from(r.embankment);
+  if (S.which === 'base') return emb;
+  for (const e of S.edits) if (e.type === 'levee')
+    for (const c of e.cells) { const k = S.rivK.get(c); if (k !== undefined) emb[k] += e.height; }
   return emb;
 }
 function prepResult(res) {
@@ -295,13 +297,16 @@ function riverRatio(res, m) {
   const h = S.frame < 0 ? res._rmax[m] : res._rframes[S.frame * r.ri.length + m] / 100;
   return h / Math.max(r.depth[m] + res.embankment[m], 0.1);
 }
+function riverColor(res, emb, m) { return emb ? lerpColor(LEVEE_STOPS, emb[m]) : lerpColor(RIVER_STOPS, riverRatio(res, m)); }
 function colorRiver(res) {
   if (!riverLines) return;
   const r = S.st.river, col = riverLines.geometry.attributes.color.array;
+  const emb = S.mode === 'levee' ? currentEmbankment() : null;
+  riverLines.visible = !!emb || $('show-river').checked;
   let p = 0;
   for (let k = 0; k < r.ri.length; k++) {
     if (r.dn[k] < 0) continue;
-    for (const m of [k, r.dn[k]]) { const c = lerpColor(RIVER_STOPS, riverRatio(res, m)); col[p++] = c.r; col[p++] = c.g; col[p++] = c.b; }
+    for (const m of [k, r.dn[k]]) { const c = riverColor(res, emb, m); col[p++] = c.r; col[p++] = c.g; col[p++] = c.b; }
   }
   riverLines.geometry.attributes.color.needsUpdate = true;
 }
@@ -313,6 +318,8 @@ function refreshLegend() {
   if (S.mode === 'damage') h = '<b>被害額（柱の高さ∝√被害額）</b>' + sw('#fde68a', '被害率 小') + sw('#b91c1c', '被害率 大');
   if (S.mode === 'diff') h = '<b>最大浸水深の差（施策−現況）</b>' + sw('#22c55e', '浅くなった') + sw('#ef4444', '深くなった');
   if (S.mode === 'population') h = '<b>人口（2020国勢調査, 移転後）</b>' + sw('#fff7bc', '少') + sw('#993404', '多');
+  if (S.mode === 'levee') h = `<b>堤防高（地盤から, ${S.which === 'base' ? '既存' : '既存＋施策'}）</b>`
+    + LEVEE_STOPS.map(([v, c]) => sw(c, v ? `${v} m〜` : 'なし')).join('') + '<div class="hint">河道の線と柱の色。柱の高さ∝堤防高</div>';
   h += '<hr style="border:0;border-top:1px solid #ddd">' + sw('#2563eb', '河道（水位/堤防高）') + sw('#dc2626', '越水') +
     sw('#5b3a1a', '堤防') + sw('#334155', 'ダム（▼）');
   if ($('show-fac').checked) h += Object.entries(FAC_COLOR).map(([k, c]) => sw(c, `施設: ${SVC_JP[k]}`)).join('');
@@ -346,12 +353,13 @@ function drawMinimapOverlay() {
   mctx.clearRect(0, 0, mm.width, mm.height);
   mctx.imageSmoothingEnabled = false;
   mctx.drawImage(mmBase, 0, 0, mm.width, mm.height);
-  if ($('show-river').checked) {
-    mctx.lineWidth = 1;
+  const emb = S.mode === 'levee' ? currentEmbankment() : null;
+  if (emb || $('show-river').checked) {
+    mctx.lineWidth = emb ? 2 : 1;
     for (let k = 0; k < r.ri.length; k++) {
       const d = r.dn[k];
-      if (d < 0 || r.area[k] < 20) continue;
-      mctx.strokeStyle = '#' + lerpColor(RIVER_STOPS, riverRatio(res, k)).getHexString();
+      if (d < 0 || (!emb && r.area[k] < 20)) continue;
+      mctx.strokeStyle = '#' + riverColor(res, emb, k).getHexString();
       mctx.beginPath(); mctx.moveTo((r.rj[k] + 0.5) * s, (r.ri[k] + 0.5) * s); mctx.lineTo((r.rj[d] + 0.5) * s, (r.ri[d] + 0.5) * s); mctx.stroke();
     }
   }
@@ -474,10 +482,10 @@ function toolParams(t) {
 }
 function describeEdit(e) {
   const km2 = (e.cells.length * S.st.dx * S.st.dy / 1e6).toFixed(2);
-  const extra = e.type === 'raise' ? ` +${e.height}m${e.terrain ? '盛土' : ''}` : e.type === 'levee' ? ` ${e.height}m`
+  const extra = e.type === 'raise' ? ` +${e.height}m${e.terrain ? '盛土' : ''}` : e.type === 'levee' ? ` 既存+${e.height}m`
     : e.type === 'retention' ? ` 貯留深${e.depth}m 越流開始=${e.auto ? '自動' : `現況ピークの${Math.round(e.q_ratio * 100)}%`}`
     : e.type === 'relocate' ? ` →${DEST_JP[e.dest]}${e.dest !== 'existing' ? `（${e.density}人/ha）` : ''}` : '';
-  return `${TOOL[e.type].jp}${extra}（${e.cells.length}セル, ${km2} km²）`;
+  return `${TOOL[e.type].jp}${e.label ? ' ' + e.label : ''}${extra}（${e.cells.length}セル, ${km2} km²）`;
 }
 function renderEdits() {
   const ul = $('edits');
@@ -500,6 +508,11 @@ function showHover(c) {
   const pop = (res && res._pop) ? res._pop[c] : S.pop[c];
   let t = `標高 ${S.zcur[c].toFixed(1)} m\n土地利用 ${CLASS_JP[st.class_names[lc]]}\n人口 ${pop.toFixed(0)}  世帯 ${currentHouseholds()[c].toFixed(0)}\n`;
   t += `HAND ${st.hand[c] >= 0 ? st.hand[c].toFixed(1) + ' m' : '—'}\n資産額 ${(S.value[c] / 1e8).toFixed(2)} 億円`;
+  const k = S.rivK.get(c);
+  if (k !== undefined) {
+    const e0 = st.river.embankment[k], e1 = currentEmbankment()[k];
+    t += `\n河道: 堤防高 ${e0.toFixed(1)} m${e1 > e0 + 1e-3 ? ` → ${e1.toFixed(1)} m（施策 +${(e1 - e0).toFixed(1)} m）` : ''}`;
+  }
   if (res) t += `\n浸水深 ${depthField(res)[c].toFixed(2)} m\n被害額 ${(res._damage[c] / 1e8).toFixed(2)} 億円`;
   el.textContent = t;
 }
@@ -683,7 +696,7 @@ function setResultUI() {
   S.zcur = (S.which === 'scen' && S.scen && S.scen._z) ? S.scen._z : S.st._z;
   updateTerrainHeights();
   $('time').max = res ? res.nt - 1 : 0;
-  colorize(); refreshBars(); drawPanels(); updateTimeLabel();
+  colorize(); refreshBars(); drawPanels(); updateTimeLabel(); updateBulkPreview();
 }
 async function runBaseline() {
   S.base = null; S.scen = null;
@@ -748,14 +761,132 @@ function selectTool(t) {
   document.querySelectorAll('#tool-params > div').forEach((d) => d.classList.toggle('show',
     d.dataset.for === t || (t === 'relocate_dest' && d.dataset.for === 'relocate')));
   $('rl-paint').classList.toggle('active', t === 'relocate_dest');
+  renderBulk(t);
   $('tool-hint').textContent = t === 'view' ? '左ドラッグ＝回転、右ドラッグ＝移動、ホイール＝拡大。2D地図クリックで移動。'
-    : t === 'levee' ? '河道に沿って塗ると、範囲内の河道セルに堤防を設置（樋門付き）'
+    : t === 'levee' ? '河道に沿って塗ると、範囲内の河道セルの堤防を既存＋指定高に（堤防なしは0＋指定高、樋門付き）'
     : t === 'retention' ? '河道沿いの土地を塗る（建物用地・河道・水域は除外）。隣接する河道の洪水を貯める'
     : t === 'paddy_dam' ? '水田セルのみ有効（他の土地利用は無視）'
     : t === 'relocate_dest' ? '移転先にする範囲を塗る。終わったら「🏠 移転」で移転元を塗る'
     : t === 'erase' ? '塗った範囲の施策を取り消し' : '左ドラッグで塗る（3D・2D地図）。右ドラッグ＝移動';
 }
 document.querySelectorAll('#tools button, #ops button').forEach((b) => b.onclick = () => selectTool(b.dataset.tool));
+// -------------------------------------------------------------- bulk selection
+// 一括設定: instead of painting, choose the cells of a measure by conditions + region.
+// The result is an ordinary edit (listed, erasable, costed) built from the chosen cells.
+// 本流: from the basin outlet upstream, following the larger upstream area at every confluence
+function mainStem() {
+  const r = S.st.river, n = r.ri.length, ups = Array.from({ length: n }, () => []);
+  let out = -1;
+  for (let k = 0; k < n; k++) { if (r.dn[k] >= 0) ups[r.dn[k]].push(k); else if (out < 0 || r.area[k] > r.area[out]) out = k; }
+  const stem = new Set();
+  for (let k = out; k >= 0;) { stem.add(k); const u = ups[k]; k = u.length ? u.reduce((a, b) => (r.area[b] > r.area[a] ? b : a)) : -1; }
+  return stem;
+}
+const sel = (name, label, opts) => ({ name, label, opts });
+const num = (name, label, value, unit, step = 1) => ({ name, label, value, unit, step });
+const HAND_OPT = num('hand', '河道からの高さ（HAND）', 0, 'm 以上', 1);
+const AT_RISK = [sel('crit', '対象', { hand: '低地の建物用地（HAND＜X m）', depth: '現況の最大浸水深 ≥ X m のセル（現況の計算が必要）' }),
+  num('x', 'X', 3, 'm', 0.5)];
+function atRisk(v) {
+  const st = S.st, urban = st.class_names.indexOf('urban'), out = [];
+  if (v.crit === 'depth') {
+    if (!S.base) return null;
+    for (let c = 0; c < st.nx * st.ny; c++) if (st.mask[c] && S.base._max[c] / 100 >= v.x) out.push(c);
+  } else for (let c = 0; c < st.nx * st.ny; c++) if (st.mask[c] && st.landclass[c] === urban && st.hand[c] >= 0 && st.hand[c] < v.x) out.push(c);
+  return out;
+}
+const atRiskLabel = (v) => (v.crit === 'depth' ? `現況浸水 ${v.x} m以上` : `HAND<${v.x} mの建物用地`);
+const landCells = (classes, hmin) => {
+  const st = S.st, ids = classes.map((n) => st.class_names.indexOf(n)), out = [];
+  for (let c = 0; c < st.nx * st.ny; c++) if (st.mask[c] && ids.includes(st.landclass[c]) && (hmin <= 0 || st.hand[c] >= hmin)) out.push(c);
+  return out;
+};
+const FO_LU = { farm: ['paddy', 'field'], field: ['field'], paddy: ['paddy'] };
+const BULK = {
+  forest: { opts: [sel('lu', '対象', { farm: '水田・畑', field: '畑のみ', paddy: '水田のみ' }), HAND_OPT],
+    cells: (v) => landCells(FO_LU[v.lu], v.hand),
+    label: (v) => `${{ farm: '水田・畑', field: '畑', paddy: '水田' }[v.lu]}${v.hand > 0 ? `（HAND ${v.hand} m以上）` : ''}` },
+  paddy_dam: { opts: [HAND_OPT], cells: (v) => landCells(['paddy'], v.hand),
+    label: (v) => `水田${v.hand > 0 ? `（HAND ${v.hand} m以上）` : '（全域）'}` },
+  relocate: { opts: AT_RISK, cells: atRisk, label: atRiskLabel },
+  raise: { opts: AT_RISK, cells: atRisk, label: atRiskLabel },
+  levee: { opts: [sel('target', '対象', { main: '本流のみ', trib: '支流のみ', all: '全体（本流＋支流）' }),
+    num('amin', '集水面積', 10, 'km² 以上', 10),
+    sel('sect', '区間', { any: 'すべて', none: '堤防なし（0.5 m未満）のみ＝新規築堤', existing: '既存堤防あり（0.5 m以上）のみ＝嵩上げ' })],
+    cells: (v) => {
+      const r = S.st.river, nx = S.st.nx, stem = S.mainStem || (S.mainStem = mainStem()), out = [];
+      for (let k = 0; k < r.ri.length; k++) {
+        if (r.area[k] < v.amin) continue;
+        if ((v.target === 'main' && !stem.has(k)) || (v.target === 'trib' && stem.has(k))) continue;
+        const e = r.embankment[k];
+        if ((v.sect === 'none' && e >= 0.5) || (v.sect === 'existing' && e < 0.5)) continue;
+        out.push(r.ri[k] * nx + r.rj[k]);
+      }
+      return out;
+    },
+    label: (v) => `${{ main: '本流', trib: '支流', all: '本流＋支流' }[v.target]}（${v.amin} km²以上${{ any: '', none: '・堤防なし区間', existing: '・既存堤防区間' }[v.sect]}）` },
+};
+S.bulkVals = {};
+function bulkValues(t) {
+  const v = S.bulkVals[t] || (S.bulkVals[t] = {});
+  for (const o of BULK[t].opts) if (v[o.name] === undefined) v[o.name] = o.opts ? Object.keys(o.opts)[0] : o.value;
+  return v;
+}
+function renderBulk(t) {
+  const box = $('bulk');
+  box.classList.toggle('show', !!BULK[t]);
+  if (!BULK[t]) return;
+  const v = bulkValues(t);
+  $('bulk-opts').innerHTML = BULK[t].opts.map((o) => (o.opts
+    ? `<label>${o.label} <select data-bk="${o.name}">${Object.entries(o.opts).map(([k, l]) => `<option value="${k}"${v[o.name] === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`
+    : `<label>${o.label} <input data-bk="${o.name}" type="number" value="${v[o.name]}" step="${o.step}" min="0"> ${o.unit}</label>`)).join('');
+  $('bulk-opts').querySelectorAll('[data-bk]').forEach((el) => {
+    el.oninput = el.onchange = () => { v[el.dataset.bk] = el.tagName === 'SELECT' ? el.value : +el.value; updateBulkPreview(); };
+  });
+  updateBulkPreview();
+}
+function setupRegions() {
+  const st = S.st;
+  S.sub = Object.fromEntries(Object.entries(st.subbasins || {}).map(([g, b]) => [g, dec(b, Uint8Array)]));
+  const names = Object.keys(S.sub).sort((a, b) => S.sub[b].reduce((x, y) => x + y, 0) - S.sub[a].reduce((x, y) => x + y, 0));
+  $('bk-region').innerHTML = '<option value="">流域全体</option>' + names.map((g) => `<option value="${g}">${g} 観測所の上流域</option>`).join('');
+}
+$('bk-region').onchange = () => updateBulkPreview();
+function bulkCells() {
+  const t = S.tool, v = bulkValues(t);
+  let cells = BULK[t].cells(v);
+  if (cells === null) return { cells: null };
+  const g = $('bk-region').value;
+  if (g) cells = cells.filter((c) => S.sub[g][c]);
+  cells = applicable(t, cells);
+  const label = BULK[t].label(v) + (g ? `・${g}上流` : '');
+  return { cells, label };
+}
+function updateBulkPreview() {
+  if (!S.st || !BULK[S.tool]) return;
+  const { cells } = bulkCells(), st = S.st;
+  if (cells === null) { $('bulk-preview').textContent = '先に現況を計算してください（「▶ 洪水計算を実行」）'; return; }
+  let t = `対象 ${cells.length} セル`;
+  if (S.tool === 'levee') {
+    const r = st.river, ks = cells.map((c) => S.rivK.get(c));
+    const L = ks.reduce((a, k) => a + r.length[k], 0) * 2, e0 = ks.length ? ks.reduce((a, k) => a + r.embankment[k], 0) / ks.length : 0;
+    t += `、延長 約 ${(L / 1000).toFixed(0)} km（両岸）、既存堤防 平均 ${e0.toFixed(1)} m`;
+  } else {
+    t += `（${(cells.length * st.dx * st.dy / 1e6).toFixed(1)} km²）`;
+    const hh = cells.reduce((a, c) => a + S.hh[c], 0);
+    if (hh >= 1) t += `、世帯 約 ${Math.round(hh).toLocaleString()}`;
+  }
+  $('bulk-preview').textContent = t;
+}
+$('bulk-add').onclick = () => {
+  if (!S.st || !BULK[S.tool]) return;
+  const t = S.tool, { cells, label } = bulkCells();
+  if (cells === null) { setProgress(0, '一括設定: 先に現況を計算してください'); return; }
+  if (!cells.length) { setProgress(0, `${TOOL[t].jp} 一括設定: 条件に合うセルがありません`); return; }
+  S.edits.push({ type: t, cells, ...toolParams(t), label });
+  renderEdits(); refreshBars(); colorize();
+  setProgress(0, `${TOOL[t].jp} 一括追加: ${label} ${cells.length} セル。「▶ 洪水計算を実行」で計算します`);
+};
 function syncRelocateUI() {
   const v = $('rl-dest').value;
   $('rl-dens-l').style.display = v === 'new' ? '' : 'none';
@@ -780,7 +911,7 @@ $('edit-costs').onclick = () => $('unit-costs').classList.toggle('show');
 $('brush').oninput = (e) => { $('brush-v').textContent = e.target.value; updateBrushInfo(); };
 $('exag').oninput = (e) => { S.exag = +e.target.value; $('exag-v').textContent = S.exag; updateTerrainHeights(); };
 $('show-assets').onchange = refreshBars;
-$('show-river').onchange = () => { riverLines.visible = $('show-river').checked; refreshBars(); drawMinimapOverlay(); };
+$('show-river').onchange = () => { colorRiver(currentResult()); refreshBars(); drawMinimapOverlay(); };
 $('show-fac').onchange = () => { refreshLegend(); drawMinimapOverlay(); };
 $('run').onclick = runScenario;
 $('clear').onclick = () => { S.edits = []; S.scen = null; renderEdits(); setResultUI(); };
@@ -813,6 +944,8 @@ async function loadBasin(key) {
   S.pop = dec(st.population, Float32Array); S.value = dec(st.asset_value, Float32Array);
   S.st = st; S.basin = key; S.edits = []; S.base = null; S.scen = null; S.zcur = st._z;
   S.riverSet = new Set(st.river.ri.map((i, k) => i * st.nx + st.river.rj[k]));
+  S.rivK = new Map(st.river.ri.map((i, k) => [i * st.nx + st.river.rj[k], k]));
+  S.mainStem = null; setupRegions(); renderBulk(S.tool);
   let zmin = Infinity, zmax = -Infinity;
   st._z.forEach((v) => { if (Number.isFinite(v)) { zmin = Math.min(zmin, v); zmax = Math.max(zmax, v); } });
   S.zmin = zmin; S.zmax = zmax;

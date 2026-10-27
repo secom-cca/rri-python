@@ -1,7 +1,9 @@
 """Asset base quantities on the model grid for damage estimation.
 
 Sources: e-Stat mesh statistics (households 250 m, employees 500 m by
-industry), 国土数値情報 land-use fractions (paddy / field area).
+industry, 総農家数 1 km from the 2020年農林業センサス), 国土数値情報 land-use
+fractions (paddy / field area).  Farm households (農漁家, manual 第4表; 漁家 are
+not included) are distributed within each 1 km mesh by farmland area.
 
 Floor area (延床面積): the manual uses JACIC 100 m data (paid).  As a
 documented substitute we estimate
@@ -35,8 +37,10 @@ def build_assets(domain, landuse_fraction, bbox, prefecture: str) -> AssetGrid:
     cell = domain.cell_area
     paddy = landuse_fraction[landuse.CLASSES.index("paddy")] * cell
     field = landuse_fraction[landuse.CLASSES.index("field")] * cell
+    farm_w = landuse_fraction[landuse.CLASSES.index("paddy")] + landuse_fraction[landuse.CLASSES.index("field")] + 1e-3
+    farm_hh = estat.farm_households(meshes, tf, shape, crs, farm_w)
     m = domain.mask
     z = lambda a: np.where(m, a, 0.0)  # noqa: E731
     return AssetGrid(floor_area_m2=z(floor), households=z(hh),
-                     employees={k: z(v) for k, v in emp.items()},
+                     employees={k: z(v) for k, v in emp.items()}, farm_households=z(farm_hh),
                      paddy_area_m2=z(paddy), field_area_m2=z(field), prefecture=prefecture)

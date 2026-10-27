@@ -11,7 +11,7 @@ window.  Scenario = list of edits painted in the GUI:
   {"type": "relocate",   "cells": [...]}                       住宅・事業所の移転（安全な市街地へ）
   {"type": "raise",      "cells": [...], "height": 1.0,
                          "terrain": false}                     嵩上げ（床高 / 盛土）
-  {"type": "levee",      "cells": [...], "height": 3.0}        堤防（範囲内の河道セル）
+  {"type": "levee",      "cells": [...], "height": 1.0}        堤防（範囲内の河道セル, 既存堤防 + height）
   {"type": "retention",  "cells": [...], "depth": 2.0,
                          "inlet": 1.0}                         遊水地（掘削＋越流堤）
 Global scenario parameters (gparams): paddy_store_m, paddy_release_mmh,
@@ -42,8 +42,9 @@ from .. import climate as CL
 from .. import costs as C
 from .. import damage as D
 from .. import indicators as I
+from .. import subgrid as SG
 from ..assets import build_assets
-from ..basin import floodplain_inundation, lonlat_to_rc
+from ..basin import floodplain_inundation, lonlat_to_rc, upstream_mask
 from ..cases import BASINS, EVENTS
 from ..data import estat, facilities, landuse, mlit_water
 from ..events import collect_gauges, gridded_rainfall
@@ -67,6 +68,8 @@ RESOLUTIONS = {125.0: "詳細・低速", 250.0: "標準・校正済み", 500.0: 
 # bump when the asset / indicator-data derivation changes (v2: e-Stat meshes without
 # a cell centre are no longer dropped, +8% households at 250 m)
 ASSET_CACHE_VERSION = 2            # relocation destinations: built-up cells this high above drainage
+ASSET_FILE_VERSION = 3             # assets only (v3: farm households 2020年農林業センサス)
+SUBGRID_VERSION = 1                # sub-grid building / farmland elevations (rri_sim.subgrid)
 
 
 def b64(a: np.ndarray, dtype) -> str:
@@ -89,11 +92,11 @@ class BasinSession:
         self.d, self.meta, self.b = build_preset(key, use_cache=True, res=self.res)
         d, b = self.d, self.b
         pref = b.get("prefecture", "福岡")
-        apath = CACHE / f"assets_{self.ckey}_v{ASSET_CACHE_VERSION}.pkl"
+        apath = CACHE / f"assets_{self.ckey}_v{ASSET_FILE_VERSION}.pkl"
         if apath.exists():
             self.assets = pickle.load(open(apath, "rb"))
         else:
-            say(0.6, "資産データを作成中（初回: e-Stat 国勢調査・経済センサスのメッシュ統計）")
+            say(0.6, "資産データを作成中（初回: e-Stat 国勢調査・経済センサス・農林業センサスのメッシュ統計）")
             self.assets = build_assets(d, self.meta["landuse_fraction"], b["cfg"].bbox, pref)
             CACHE.mkdir(parents=True, exist_ok=True)
             pickle.dump(self.assets, open(apath, "wb"))
@@ -101,6 +104,14 @@ class BasinSession:
         say(0.95, "表示データを準備中")
         self.gs = D.ground_slope_from_dem(d.z, d.dx, d.dy)
         self.hand = self.meta["hand"]
+        spath = CACHE / f"subgrid_{self.ckey}_v{SUBGRID_VERSION}.pkl"
+        if spath.exists():
+            self.subgrid = pickle.load(open(spath, "rb"))
+        else:
+            say(0.7, "建物・農地の標高分布を作成中（初回: 5 m標高・100 m土地利用。数分）")
+            self.subgrid = SG.elevation_offsets(d, b["cfg"].bbox, self.hand, HAND_DAMAGE_MAX,
+                                                say=lambda f, m: say(0.7 + 0.2 * f, m))
+            pickle.dump(self.subgrid, open(spath, "wb"))
         self.flood_cells = np.flatnonzero(d.mask & (np.nan_to_num(self.hand, nan=1e9) <= HAND_DISPLAY_MAX))
         self.class_names = [c.name for c in d.params.land_classes]
         # 居住誘導区域 proxy for 居住集約度: built-up land of the current land use (fixed across scenarios)
@@ -150,7 +161,7 @@ class BasinSession:
             "river": {"ri": r.ri.tolist(), "rj": r.rj.tolist(), "dn": r.dn.tolist(),
                       "width": r.width.round(1).tolist(), "depth": r.depth.round(2).tolist(),
                       "embankment": r.embankment.round(2).tolist(),
-                      "area": r.area_km2.round(1).tolist()},
+                      "area": r.area_km2.round(1).tolist(), "length": r.length.round(0).tolist()},
             "households": b64(self.assets.households, "<f4"),
             "population": b64(self.pop, "<f4"),
             "asset_value": b64(value, "<f4"),
@@ -158,6 +169,9 @@ class BasinSession:
             "households_total": float(self.assets.households.sum()),
             "population_total": float(self.pop[d.mask].sum()),
             "gauges": {g: int(k) for g, k in self.meta["gauge_index"].items()},
+            # catchment of each gauge (for the GUI's bulk selection "upstream of gauge X")
+            "subbasins": {g: b64(upstream_mask(self.meta["fdir"], int(r.ri[k]), int(r.rj[k])) & d.mask, "u1")
+                          for g, k in self.meta["gauge_index"].items()},
             "gauges_observed": list(self.b["discharge_gauges"]),
             "facilities": {k: v.tolist() for k, v in self.fac.items()},
             "dams": dams,
@@ -342,7 +356,7 @@ class BasinSession:
                 painted_dest.ravel()[c] = True
         painted_dest &= d.mask & ~is_riv
         notes, applied, retention = [], [], []
-        for e in edits:
+        for ei, e in enumerate(edits):
             if e["type"] == "relocate_dest":
                 continue
             cells = np.asarray(e.get("cells", []), dtype=np.int64)
@@ -399,13 +413,15 @@ class BasinSession:
                 notes.append(f"嵩上げ +{hgt:.1f} m {m.sum()} セル（約 {q['households']:.0f} 世帯）"
                              + ("（盛土）" if e.get("terrain") else "（床高）"))
             elif t == "levee":
-                hgt = float(e.get("height", 3.0))
+                # 築堤・嵩上げ: + height on top of the existing levee (0 m where there is none)
+                hgt = float(e.get("height", 1.0))
                 sel = m.ravel()[riv_flat]
-                add = np.maximum(hgt - r.embankment[sel], 0.0)
-                r.embankment[sel] = np.maximum(r.embankment[sel], hgt)
-                L = float((r.length[sel] * (add > 0)).sum() * 2)   # both banks
-                q = {"height_m": float(add[add > 0].mean()) if (add > 0).any() else 0.0, "length_m": L}
-                notes.append(f"堤防 {hgt:.1f} m 河道 {sel.sum()} セル（延長 {L / 1000:.1f} km, 両岸）")
+                h0 = r.embankment[sel].copy()
+                r.embankment[sel] = h0 + hgt
+                L = float(r.length[sel].sum() * 2)   # both banks
+                q = {"height_m": hgt, "base_height_m": float(h0.mean()) if len(h0) else 0.0, "length_m": L}
+                notes.append(f"堤防 +{hgt:.1f} m 河道 {sel.sum()} セル（延長 {L / 1000:.1f} km, 両岸; "
+                             f"既存 平均 {q['base_height_m']:.1f} m → {q['base_height_m'] + hgt:.1f} m）")
             elif t == "retention":
                 dep = float(e.get("depth", 3.0))
                 ratio = float(e.get("q_ratio", RETENTION_Q_RATIO))
@@ -475,8 +491,25 @@ class BasinSession:
                 if mv["households"] >= 0.5:
                     msg += f"。用地内の {mv['households']:.0f} 世帯は移転"
                 notes.append(msg)
-            applied.append({"type": t, "q": q})
+            applied.append({"type": t, "q": q, "edit": ei})
         return d, assets, pop, floor, notes, storage, applied, retention
+
+    def estimate(self, event_key, edits, gparams=None):
+        """Project cost of `edits` without simulating (game UI budget).  Uses the
+        baseline of this event/climate when it has been run (relocation targets,
+        retention weirs); returns the cost with one item per applied edit and
+        `edit_cost_yen` (present value per edit index, 0 where nothing applied)."""
+        gparams = gparams or {}
+        base = self._baseline.get((event_key, self.climate(gparams).key()))
+        design = self._baseline.get((event_key, CL.ClimateScenario().key()), base)
+        *_, notes, storage, applied, retention = self.apply_edits(
+            edits, gparams, base["_depth"] if base else None, design["_river_qmax"] if design else None,
+            design["_river_q_series"] if design else None)
+        cost = C.estimate(applied, gparams.get("unit_costs"))
+        per = [0.0] * len(edits)
+        for a, it in zip(applied, cost["items"]):
+            per[a["edit"]] += it["pv_yen"]
+        return {"cost": {k: v for k, v in cost.items() if k != "unit_costs"}, "edit_cost_yen": per, "edits_log": notes}
 
     def climate(self, gparams) -> "CL.ClimateScenario":
         rr, sr = self.b.get("climate_region", ("その他", "I"))
@@ -572,7 +605,26 @@ class BasinSession:
         disp = floodplain_inundation(surf, self.hand, DEPTH_MIN, HAND_DISPLAY_MAX)
         disp[storage] = surf[storage]   # shown in the map (遊水地 filling) ...
         depth[storage] = 0.0            # ... but not counted as inundation / damage
-        dmg = D.estimate_damage(depth, assets, ground_slope=self.gs, floor_height=floor)
+        # inundation duration [days] (hourly snapshots of the floodplain cells) for crops
+        frames_d = np.stack([s[1][0] for s in res.snapshots])     # (nt, nflood)
+        dur = np.zeros(d.shape)
+        dur.ravel()[fc] = (frames_d >= DEPTH_MIN).sum(0) * 3600.0 / 86400.0
+        # sub-grid: houses / farmland flooded by their own ground elevation within the cell
+        use_sg = gparams.get("subgrid", True) and getattr(self, "subgrid", None) is not None
+        level = SG.water_level(depth, self.subgrid["all"]) if use_sg else None
+        dmg = D.estimate_damage(depth, assets, ground_slope=self.gs, floor_height=floor, duration_days=dur,
+                                subgrid=(self.subgrid, level) if use_sg else None)
+        hh = assets.households
+        if use_sg:
+            du = SG.depths(depth, self.subgrid["urban"], level)
+            k = du.shape[0]
+            hh_above = float((hh[None] / k * (du >= floor[None])).sum())
+            hh_below = float((hh[None] / k * ((du > 0) & (du < floor[None]))).sum())
+            area_frac = (SG.depths(depth, self.subgrid["all"], level) >= DEPTH_MIN).mean(0)
+        else:
+            hh_above = float(hh[(depth >= floor)].sum())
+            hh_below = float(hh[(depth > 0) & (depth < floor)].sum())
+            area_frac = (depth > 0).astype(float)
         names = self.class_names
         liv = I.livability(pop, d.landclass, names, self.road, self.fac, d.dx, d.dy, d.mask,
                            flood_depth=depth, zone=getattr(self, "zone", None))
@@ -581,9 +633,7 @@ class BasinSession:
                         res.mass.river_outflow + res.mass.boundary_outflow)
         eco.pop("_quality_map", None)
         cost = C.estimate(applied, gparams.get("unit_costs"))
-        frames_d = np.stack([s[1][0] for s in res.snapshots])     # (nt, nflood)
         frames_r = np.stack([s[1][1] for s in res.snapshots])     # (nt, nriv)
-        hh = assets.households
         out = {
             "event": event_key, "edits_log": edit_log, "wall_s": wall, "steps": res.n_steps,
             "mass_rel_err": res.mass.relative_error,
@@ -596,12 +646,13 @@ class BasinSession:
             "damage": b64(dmg.total_map, "<f4"),
             "damage_total_oku": dmg.total / 1e8,
             "damage_by_category_oku": {k: v / 1e8 for k, v in dmg.totals.items()},
-            "inundated_km2": float((depth > 0).sum() * d.cell_area / 1e6),
+            "inundated_km2": float(area_frac.sum() * d.cell_area / 1e6),
+            "subgrid": bool(use_sg),
             "retention_max_storage_mcm": retention_mcm,
             "retention": ret_info,
             "storage_cells": b64(np.flatnonzero(storage), "<i4"),
-            "households_above_floor": float(hh[(depth >= floor)].sum()),
-            "households_below_floor": float(hh[(depth > 0) & (depth < floor)].sum()),
+            "households_above_floor": hh_above,
+            "households_below_floor": hh_below,
             "embankment": d.river.embankment.round(2).tolist(),
             "z_changed": b64(np.where(d.mask, d.z, np.nan), "<f4") if any(
                 e["type"] in ("retention", "raise") for e in edits) else None,
@@ -710,6 +761,13 @@ class Engine:
             self.session(basin, grid_res, progress)
             return {"ready": True}
         return self._start(fn)
+
+    def estimate(self, basin, event, edits, gparams, grid_res=None):
+        with self.lock:   # sessions are built by prepare jobs; estimating needs a loaded one
+            s = self.sessions.get((basin, float(grid_res) if grid_res else default_res(basin)))
+        if s is None:
+            raise KeyError(basin)
+        return s.estimate(event, edits, gparams)
 
     def submit(self, basin, event, edits, gparams, grid_res=None):
         def fn(progress):

@@ -78,12 +78,19 @@
         <div data-for="relocate_dest"><div class="hint">移転先にする範囲を塗る（河道・水域は除く）。移転元の「移転」は「地図で指定した場所」を選んで塗ること。塗り終えたら「🏠 移転」に戻る。</div></div>
         <div data-for="raise"><label>嵩上げ高 <input id="raise-h" type="number" value="1.0" step="0.5" min="0.5" max="5"> m</label>
           <label class="chk"><input id="raise-terrain" type="checkbox"> 盛土（地盤ごと上げ、流れにも影響）</label></div>
-        <div data-for="levee"><label>堤防高（地盤から） <input id="levee-h" type="number" value="3.0" step="0.5" min="0.5" max="15"> m</label></div>
+        <div data-for="levee"><label>既存堤防から ＋ <input id="levee-h" type="number" value="1.0" step="0.5" min="0.5" max="10"> m</label>
+          <div class="hint">既存堤防（5 m標高から推定）の上に積み増し。堤防のない河道では 0＋○ m。現在の堤防高は表示「堤防高」で確認。</div>
+          </div>
         <div data-for="retention"><label>貯留深（掘削＋周囲堤） <input id="ret-d" type="number" value="3.0" step="0.5" min="0.5" max="10"> m</label>
           <label class="chk"><input id="ret-auto" type="checkbox" checked> 越流開始流量を自動設定（この洪水で容量がちょうど満杯になる流量。完全予見のため効果は最大＝楽観的）</label>
           <label id="ret-q-l">越流開始流量 <input id="ret-q" type="number" value="70" step="5" min="10" max="100"> % （現況ピーク流量比）</label>
           <div class="hint">隣接する最大の河道から、流量が越流開始流量を超えた分だけ越流堤で取り込み（容量＝面積×貯留深）、河道の流量がその半分を下回ってから排水する。容量が小さいとピーク前に満杯になり効果が出ない（結果のログに必要水量を表示）。建物用地・河道・水域は用地にできない。</div></div>
       </div>
+      <div class="bulk" id="bulk"><b>一括設定</b>（地図を塗らずに条件で範囲を選んで追加）
+        <div id="bulk-opts"></div>
+        <label>範囲 <select id="bk-region"></select></label>
+        <div class="hint" id="bulk-preview"></div>
+        <button id="bulk-add">＋ 一括で追加</button></div>
       <div class="hint" id="tool-hint">「視点」でドラッグ＝回転。施策選択中は左ドラッグで塗る（3D・2D地図どちらでも可、右ドラッグ＝移動）。</div>
     </section>
 
@@ -105,6 +112,7 @@
         <button data-mode="damage">被害額</button>
         <button data-mode="diff">差分</button>
         <button data-mode="population">人口</button>
+        <button data-mode="levee">堤防高</button>
       </div>
       <div class="tools" id="which">
         <button data-which="base">現況</button>

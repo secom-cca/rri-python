@@ -3,6 +3,7 @@
   T001142 : 令和2年国勢調査 4分の1地域メッシュ (≈250 m)  -> 一般世帯数 (column '一般世帯数')
   T001147 : 経済センサス 2分の1地域メッシュ (≈500 m)      -> 従業者数 by 産業大分類 C..S
             (columns T001147022..042 = 従業者数; 001..021 = 事業所数)
+  T001079 : 2020年農林業センサス 3次メッシュ (1 km)       -> 総農家数 (column T001079001)
 
 Download: https://www.e-stat.go.jp/gis/statmap-search/data?statsId=...&code=<1st mesh>&downloadType=2
 Masked cells ('*', 秘匿) are treated as 0; their totals are merged into the
@@ -124,6 +125,19 @@ def employees(first_meshes, transform, shape, crs, weight=None):
             for r in rows:
                 out[code][r[0]] = out[code].get(r[0], 0.0) + _num(r[name])
     return {c: distribute_to_grid(v, transform, shape, crs, weight) for c, v in out.items()}
+
+
+def farm_households(first_meshes, transform, shape, crs, weight=None):
+    """総農家数 (2020年農林業センサス, 1 km mesh), distributed by `weight` (farmland)."""
+    vals = {}
+    for mesh in first_meshes:
+        h0, h1, rows = _table("T001079", mesh)
+        if not rows:
+            continue
+        col = h0.index("T001079001")
+        for r in rows:
+            vals[r[0]] = vals.get(r[0], 0.0) + _num(r[col])
+    return distribute_to_grid(vals, transform, shape, crs, weight)
 
 
 def population(first_meshes, transform, shape, crs, weight=None):

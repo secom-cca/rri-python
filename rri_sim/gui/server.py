@@ -33,6 +33,12 @@ def index():
     return FileResponse(STATIC / "index.html", headers=NO_CACHE)
 
 
+@app.get("/play")
+def play():
+    """Game UI for classes (budget, mission, score); same engine as the expert UI at /."""
+    return FileResponse(STATIC / "play.html", headers=NO_CACHE)
+
+
 @app.get("/api/basins")
 def basins():
     return engine.basins()
@@ -66,6 +72,15 @@ def prepare(req: PrepareRequest):
 @app.post("/api/run")
 def run(req: RunRequest):
     return {"job": engine.submit(req.basin, req.event, req.edits, req.params, req.res)}
+
+
+@app.post("/api/estimate")
+def estimate(req: RunRequest):
+    """Project cost of the edits without simulating (loaded basins only)."""
+    try:
+        return engine.estimate(req.basin, req.event, req.edits, req.params, req.res)
+    except KeyError:
+        raise HTTPException(409, "basin not loaded; POST /api/prepare first")
 
 
 class CostRequest(BaseModel):
