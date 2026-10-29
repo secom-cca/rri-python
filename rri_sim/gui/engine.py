@@ -506,10 +506,13 @@ class BasinSession:
             edits, gparams, base["_depth"] if base else None, design["_river_qmax"] if design else None,
             design["_river_q_series"] if design else None)
         cost = C.estimate(applied, gparams.get("unit_costs"))
-        per = [0.0] * len(edits)
+        per, ini, ann = [0.0] * len(edits), [0.0] * len(edits), [0.0] * len(edits)
         for a, it in zip(applied, cost["items"]):
             per[a["edit"]] += it["pv_yen"]
-        return {"cost": {k: v for k, v in cost.items() if k != "unit_costs"}, "edit_cost_yen": per, "edits_log": notes}
+            ini[a["edit"]] += it["initial_yen"]
+            ann[a["edit"]] += it["annual_yen"]
+        return {"cost": {k: v for k, v in cost.items() if k != "unit_costs"}, "edit_cost_yen": per,
+                "edit_initial_yen": ini, "edit_annual_yen": ann, "edits_log": notes}
 
     def climate(self, gparams) -> "CL.ClimateScenario":
         rr, sr = self.b.get("climate_region", ("その他", "I"))
@@ -534,11 +537,17 @@ class BasinSession:
         is_base = not edits
         if is_base and bkey in self._baseline:
             return self._baseline[bkey]
-        if not is_base and bkey not in self._baseline:
+        # gparams["baseline"] == "current": measures are set against the current-climate baseline
+        # (no extra no-measures run per scenario climate; used by the RDM exploration)
+        cur_key = (event_key, CL.ClimateScenario().key())
+        use_cur = gparams.get("baseline") == "current"
+        if not is_base and use_cur and cur_key not in self._baseline:
+            self.run(event_key, [], {k: v for k, v in gparams.items() if k not in ("climate", "baseline")})
+        elif not is_base and not use_cur and bkey not in self._baseline:
             # measures are evaluated against the baseline (relocation targets dry land,
             # retention weirs are set from the baseline peak discharge)
             self.run(event_key, [], gparams, (lambda f, msg: progress(0.5 * f, "現況: " + msg)) if progress else None)
-        base = self._baseline.get(bkey)
+        base = self._baseline.get(bkey) or (self._baseline.get(cur_key) if use_cur else None)
         # 遊水地 are designed for the current climate (the facility does not change with the scenario)
         design = self._baseline.get((event_key, CL.ClimateScenario().key()), base)
         if progress and not is_base:

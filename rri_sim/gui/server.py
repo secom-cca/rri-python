@@ -39,6 +39,93 @@ def play():
     return FileResponse(STATIC / "play.html", headers=NO_CACHE)
 
 
+@app.get("/rdm")
+def rdm_page():
+    """Results of Robust Decision Making runs (scripts/run_rdm.py; docs/09_rdm.md)."""
+    return FileResponse(STATIC / "rdm.html", headers=NO_CACHE)
+
+
+@app.get("/api/rdm")
+def rdm_runs():
+    from ..rdm.run import RDM_DIR
+    out = []
+    for p in sorted(RDM_DIR.glob("*/results.json"), key=lambda p: -p.stat().st_mtime):
+        out.append({"name": p.parent.name, "updated": p.stat().st_mtime})
+    return out
+
+
+def _rdm_file(name, fname):
+    import re
+    from ..rdm.run import RDM_DIR
+    if not re.fullmatch(r"[\w\-.]+", name) or name.startswith("."):
+        raise HTTPException(400, "bad name")
+    p = RDM_DIR / name / fname
+    if not p.exists():
+        raise HTTPException(404, f"no {fname} for RDM run {name}")
+    return FileResponse(p, media_type="application/json", headers=NO_CACHE)
+
+
+@app.get("/api/rdm/{name}")
+def rdm_result(name: str):
+    return _rdm_file(name, "results.json")
+
+
+@app.get("/api/rdm/{name}/sensitivity")
+def rdm_sensitivity(name: str):
+    """Sensitivity analysis of the run (scripts/run_sensitivity.py; docs/10_sensitivity.md)."""
+    return _rdm_file(name, "sensitivity.json")
+
+
+@app.get("/dapp")
+def dapp_page():
+    """Dynamic Adaptive Policy Pathways results (scripts/run_dapp.py; docs/11_dapp.md)."""
+    return FileResponse(STATIC / "dapp.html", headers=NO_CACHE)
+
+
+@app.get("/api/dapp")
+def dapp_runs():
+    from ..dapp.run import DAPP_DIR
+    return [{"name": p.parent.name, "updated": p.stat().st_mtime}
+            for p in sorted(DAPP_DIR.glob("*/results.json"), key=lambda p: -p.stat().st_mtime)]
+
+
+@app.get("/api/dapp/{name}")
+def dapp_result(name: str):
+    import re
+    from ..dapp.run import DAPP_DIR
+    if not re.fullmatch(r"[\w\-.]+", name) or name.startswith("."):
+        raise HTTPException(400, "bad name")
+    p = DAPP_DIR / name / "results.json"
+    if not p.exists():
+        raise HTTPException(404, f"no DAPP run {name}")
+    return FileResponse(p, media_type="application/json", headers=NO_CACHE)
+
+
+@app.get("/explore")
+def explore_page():
+    """Exploration without stakeholder weights (scripts/run_explore.py; docs/12_explore.md)."""
+    return FileResponse(STATIC / "explore.html", headers=NO_CACHE)
+
+
+@app.get("/api/explore")
+def explore_runs():
+    from ..rdm.explore import EXPLORE_DIR
+    return [{"name": p.parent.name, "updated": p.stat().st_mtime}
+            for p in sorted(EXPLORE_DIR.glob("*/results.json"), key=lambda p: -p.stat().st_mtime)]
+
+
+@app.get("/api/explore/{name}")
+def explore_result(name: str):
+    import re
+    from ..rdm.explore import EXPLORE_DIR
+    if not re.fullmatch(r"[\w\-.]+", name) or name.startswith("."):
+        raise HTTPException(400, "bad name")
+    p = EXPLORE_DIR / name / "results.json"
+    if not p.exists():
+        raise HTTPException(404, f"no exploration run {name}")
+    return FileResponse(p, media_type="application/json", headers=NO_CACHE)
+
+
 @app.get("/api/basins")
 def basins():
     return engine.basins()

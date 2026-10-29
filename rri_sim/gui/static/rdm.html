@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RDM 分析結果</title>
+<link rel="stylesheet" href="/static/rdm.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <b>🧭 Robust Decision Making — 流域治水施策の頑健性分析</b>
+  <select id="run"></select>
+  <span id="meta" class="hint"></span>
+  <span class="links"><a href="/">詳細画面</a> · <a href="/play">ゲーム</a> · <a href="/dapp">DAPP</a> · <a href="/explore">探索（重みなし）</a></span>
+</header>
+<main>
+  <section class="card wide" id="summary"></section>
+
+  <section class="card">
+    <h2>Pareto Front（名目シナリオ: 現在気候・係数1）</h2>
+    <div class="ctl">色: <select id="pf-color"><option value="ecology">Ecology</option><option value="livability">Livability</option><option value="households">床上浸水世帯</option></select>
+      強調: <select id="pf-st"><option value="">全体の Pareto</option></select></div>
+    <canvas id="pareto" height="260"></canvas>
+    <div class="hint">灰色＝予算内の評価済み案、●＝Pareto 最適解、◆＝頑健性評価の対象案。点をクリックで右の配置図に表示。</div>
+  </section>
+
+  <section class="card">
+    <h2>施策配置図 <span id="map-title" class="hint"></span></h2>
+    <canvas id="map" height="360"></canvas>
+    <div id="map-legend" class="legend"></div>
+    <ul id="policy-desc" class="desc"></ul>
+  </section>
+
+  <section class="card">
+    <h2>指標間トレードオフ（Pareto 解, 名目シナリオ）</h2>
+    <canvas id="parallel" height="240"></canvas>
+    <div class="hint">各軸 0＝最良、1＝最悪（Pareto 解の範囲で正規化）。被害額・事業費・床上浸水は小さいほど、Livability・Ecology は大きいほど良い。</div>
+  </section>
+
+  <section class="card">
+    <h2>Regret 分布 <select id="rg-st"></select></h2>
+    <canvas id="regret" height="260"></canvas>
+    <div class="hint">各点＝1シナリオ（色＝気候）。横線＝許容閾値。▲最大・■平均。予算超過のシナリオは×。</div>
+  </section>
+
+  <section class="card wide">
+    <h2>Robustness 比較</h2>
+    <canvas id="robust" height="120"></canvas>
+    <table id="rob-table" class="tbl"></table>
+  </section>
+
+  <section class="card">
+    <h2>感度分析（Sobol 指数） <select id="sb-target"></select></h2>
+    <canvas id="sobol" height="260"></canvas>
+    <div class="hint" id="sb-note"></div>
+  </section>
+
+  <section class="card">
+    <h2>シナリオと不確実性</h2>
+    <table id="scen" class="tbl"></table>
+  </section>
+
+  <section class="card wide sa-head" id="sa-head"><h2>感度分析（Sensitivity Analysis）</h2><div id="sa-summary"></div></section>
+  <section class="card wide sa"><h2>不確実性パラメータ（範囲・根拠／仮定）</h2><table id="sa-params" class="tbl"></table></section>
+  <section class="card sa"><h2>Morris スクリーニング <select id="mo-out"></select></h2><canvas id="morris" height="240"></canvas>
+    <div class="hint">μ*（効果の大きさ）と σ（非線形・交互作用）を出力の標準偏差で正規化。●＝代理モデル・Sobol に用いた計算パラメータ。</div></section>
+  <section class="card sa"><h2>Sobol 感度指数 <select id="so-out"></select></h2><canvas id="sobol2" height="240"></canvas>
+    <div class="hint" id="so-note"></div></section>
+  <section class="card sa"><h2>Tornado Plot <select id="to-out"></select></h2><canvas id="tornado" height="240"></canvas>
+    <div class="hint">各パラメータを下限・上限に振ったときの出力（他は名目値, 代理モデル）。縦線＝名目値。</div></section>
+  <section class="card sa"><h2>パラメータと評価指標の関係 <select id="re-par"></select><select id="re-out"></select></h2><canvas id="relation" height="240"></canvas>
+    <div class="hint">点＝RRI の計算結果（学習・検証の LHS 点、他のパラメータも同時に変化）、線＝代理モデル（他は名目値）。</div></section>
+  <section class="card sa"><h2>代理モデルの予測誤差（検証データ） <select id="va-out"></select></h2><canvas id="valid" height="220"></canvas>
+    <table id="va-table" class="tbl"></table></section>
+  <section class="card sa"><h2>施策選択頻度（不確実性サンプルごとの最良案）</h2><canvas id="selfreq" height="220"></canvas>
+    <table id="dec-table" class="tbl"></table></section>
+  <section class="card sa"><h2>パラメータ別の最良施策 <select id="bb-st"></select><select id="bb-par"></select></h2><canvas id="bestbin" height="220"></canvas>
+    <div class="hint">パラメータを5区間に分けたときの、各区間での最良案の頻度。</div></section>
+  <section class="card sa"><h2>Pareto Front の変化（RDM の全シナリオ, RRI）</h2><canvas id="parchg" height="220"></canvas>
+    <div class="hint">各案が Pareto 最適になるシナリオの割合（気候別）。</div></section>
+  <section class="card sa"><h2>選好重みと推奨案 <select id="pw-st"></select></h2><canvas id="sweep" height="220"></canvas>
+    <div class="hint">1つの重みを 0→1 に変え、他は元の比率で配分したときの Minimax Regret 推奨案（RDM の全案・全シナリオ）。</div></section>
+  <section class="card sa"><h2>ランダムな重みでの推奨頻度</h2><canvas id="prefreq" height="220"></canvas></section>
+  <section class="card wide sa"><h2>意思決定者間の対立と共通利益</h2>
+    <div style="display:flex;gap:16px;flex-wrap:wrap"><div><b>相手の推奨案を採ったときの自分の最大 Regret</b><table id="conflict" class="tbl"></table></div>
+    <div style="flex:1;min-width:360px"><canvas id="common" height="160"></canvas></div></div>
+    <div class="hint" id="common-note"></div></section>
+</main>
+<script type="module" src="/static/rdm.js"></script>
+</body>
+</html>

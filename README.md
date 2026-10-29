@@ -29,7 +29,7 @@ rri_sim/
   data/           gsi_dem, mlit_water, jma, landuse, estat（キャッシュ付き取得）
 scripts/          run_event.py, calibrate.py, damage_from_result.py, compare_schemes_levee.py
 tests/            検証テスト（解析解・V字流域・保存性・被害率）
-docs/             00 セットアップ / 01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI / 06 指標・事業費 / 07 気候変動 / 08 メッシュサイズ
+docs/             00 セットアップ / 01 定式化 / 02 データと計画 / 03 被害額 / 04 進捗報告 / 05 GUI / 06 指標・事業費 / 07 気候変動 / 08 メッシュサイズ / 09 RDM / 10 感度分析 / 11 DAPP
 ```
 
 ## 3D GUI（施策を塗って洪水計算・被害額を比較）
@@ -37,6 +37,9 @@ docs/             00 セットアップ / 01 定式化 / 02 データと計画 /
 ```bash
 .venv/bin/python -m rri_sim.gui      # → http://127.0.0.1:8765        （専門家向け: すべての設定）
                                      #   http://127.0.0.1:8765/play   （授業向けゲーム: 予算・ミッション・スコア）
+                                     #   http://127.0.0.1:8765/rdm    （RDM・感度分析: scripts/run_rdm.py / run_sensitivity.py, docs/09, 10）
+                                     #   http://127.0.0.1:8765/dapp   （適応経路 DAPP: scripts/run_dapp.py, docs/11）
+                                     #   http://127.0.0.1:8765/explore（施策の探索・重みなし: scripts/run_explore.py, docs/12）
 ```
 
 clone 直後に GUI を動かすまでの手順（環境構築・流域ごとの事前計算）は [docs/00_setup.md](docs/00_setup.md)。

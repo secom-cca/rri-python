@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAPP 適応経路</title>
+<link rel="stylesheet" href="/static/rdm.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <b>🛤️ Dynamic Adaptive Policy Pathways — 気候変動に応じた適応経路</b>
+  <select id="run"></select>
+  気候経路 <select id="clim"></select>
+  <span id="meta" class="hint"></span>
+  <span class="links"><a href="/">詳細画面</a> · <a href="/rdm">RDM</a> · <a href="/play">ゲーム</a> · <a href="/explore">探索</a></span>
+</header>
+<main>
+  <section class="card wide" id="summary"></section>
+  <section class="card wide"><h2>DAPP Pathways Map <span class="hint">（線＝戦略、行＝施策、○＝着手、│＝完成、✕＝ATP 到達）</span></h2>
+    <canvas id="pmap" height="380" style="width:100%"></canvas><div id="pmap-legend" class="legend"></div></section>
+  <section class="card"><h2>施策実施タイムライン <select id="tl-st"></select></h2><canvas id="timeline" height="260" style="width:100%"></canvas>
+    <div class="hint">薄色＝着手〜完成（実施遅延）、濃色＝効果あり（森林化は効果が徐々に発現）。▼＝観測指標による切替、◇＝予算不足で繰越。</div></section>
+  <section class="card"><h2>指標の時系列 <select id="ts-m"></select></h2><canvas id="series" height="260"></canvas></section>
+  <section class="card"><h2>ATP 到達時期</h2><table id="atp" class="tbl"></table>
+    <div class="hint" id="atp-note"></div></section>
+  <section class="card"><h2>許容閾値と ATP 到達年</h2><canvas id="tsens" height="240"></canvas>
+    <div class="hint">代表洪水の被害額が「対策なし・現在気候 × 閾値」を超える最初の年（2100年まで到達しない場合は上端）。</div></section>
+  <section class="card wide"><h2>戦略別スコアカード</h2><table id="score" class="tbl"></table>
+    <div class="hint">PV＝2020年への割引現在価値（割引率は設定）。色は列ごとの相対的な良し悪し（緑＝良）。Regret・達成率は全気候経路で集計。</div></section>
+  <section class="card"><h2>意思決定者ごとの Regret <select id="rg-st"></select></h2><canvas id="regret" height="240"></canvas></section>
+  <section class="card"><h2>重みを変えたときの推奨戦略</h2><canvas id="wsens" height="240"></canvas>
+    <div class="hint">各意思決定者の指標上で重みを一様にランダム抽出したときの Minimax Regret 戦略の頻度。</div></section>
+  <section class="card wide"><h2>意思決定者別の ATP（各自の地域・許容閾値）</h2><table id="statp" class="tbl"></table></section>
+</main>
+<script type="module" src="/static/dapp.js"></script>
+</body>
+</html>

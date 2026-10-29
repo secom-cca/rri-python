@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>施策の探索（重みなし）</title>
+<link rel="stylesheet" href="/static/rdm.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <b>🔎 施策の探索 — 被害目標・費用・指標の生データ（重みなし）</b>
+  <select id="run"></select>
+  <span id="meta" class="hint"></span>
+  <span class="links"><a href="/">詳細画面</a> · <a href="/rdm">RDM</a> · <a href="/dapp">DAPP</a> · <a href="/play">ゲーム</a></span>
+</header>
+<main>
+  <section class="card wide" id="summary"></section>
+  <section class="card wide"><h2>条件を後から決める</h2>
+    <div class="ctl">
+      目標 被害額 ≤ <select id="tgt"></select> × 現在気候・対策なし
+      ／ 必要な達成率 <input id="alpha" type="range" min="0" max="100" step="5" value="80" style="vertical-align:middle"> <b id="alpha-v"></b>
+      ／ 降雨倍率 <select id="rain"></select>
+    </div>
+    <div id="choice"></div>
+    <div class="hint">達成率＝不確実性のサンプル（代理モデル）のうち、被害額が目標以下となる割合。目標・降雨倍率の範囲はここで変えて再集計する（再計算なし）。</div>
+  </section>
+  <section class="card"><h2>費用と達成率 <span class="hint">（Pareto 解、色＝Ecology、クリックで選択）</span></h2><canvas id="scatter" height="300"></canvas></section>
+  <section class="card"><h2>選択した案 <span id="sel-name" class="hint"></span></h2><div id="detail"></div></section>
+  <section class="card"><h2>降雨倍率と達成率</h2><canvas id="byrain" height="240"></canvas>
+    <div class="hint">降雨倍率の区間ごとの達成率（他の不確実性は区間内でばらつく）。</div></section>
+  <section class="card"><h2>被害額の分布（対策なし・現在気候 = 1）</h2><canvas id="hist" height="240"></canvas></section>
+  <section class="card wide"><h2>Pareto 解の一覧 <span class="hint">（列見出しで並べ替え、行クリックで選択）</span></h2><div style="overflow-x:auto"><table id="ptab" class="tbl"></table></div></section>
+  <section class="card"><h2>代理モデルの検証（独立な LHS・RRI）</h2><canvas id="val" height="260"></canvas><table id="valtab" class="tbl"></table></section>
+  <section class="card"><h2>RRI による Pareto 解の検証</h2><table id="vertab" class="tbl"></table>
+    <div class="hint">各案を新しい不確実性サンプルで RRI 計算し、代理モデルの予測と比べる。一致率＝目標の達成・未達の判定が一致した割合。</div></section>
+  <section class="card wide"><h2>不確実性（範囲・根拠／仮定）</h2><table id="unc" class="tbl"></table></section>
+</main>
+<script type="module" src="/static/explore.js"></script>
+</body>
+</html>
