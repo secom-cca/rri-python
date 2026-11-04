@@ -101,6 +101,36 @@ def dapp_result(name: str):
     return FileResponse(p, media_type="application/json", headers=NO_CACHE)
 
 
+class RobustDappRequest(BaseModel):
+    name: str
+    trigger: dict = {}       # robust.trigger overrides (ratio_of_threshold, horizon_years, safety, use_observed, use_projection)
+    targets: dict = {}       # robust.targets overrides (damage_ratio, pop_ratio, from_year)
+    n_scenarios: int | None = None
+
+
+@app.post("/api/dapp/robust/simulate")
+def dapp_robust_simulate(req: RobustDappRequest):
+    """Robust DAPP steps 4-5 again with other triggers / targets (saved network, surrogate only; docs/11 11.9)."""
+    import json as _json
+    import re
+    from ..dapp import robust as RB
+    from ..roadmap import run as RR
+    from ..roadmap.physics import SurrogatePhysics
+    if not re.fullmatch(r"[\w\-.]+", req.name) or req.name.startswith("."):
+        raise HTTPException(400, "bad name")
+    d = RB.DAPP_DIR / req.name
+    if not (d / "network.npz").exists():
+        raise HTTPException(404, f"no Robust DAPP run {req.name}")
+    ex = _json.loads((d / "config.json").read_text(encoding="utf-8"))["robust"]["explore_run"]
+    try:
+        if ex not in _roadmap_phys:
+            _roadmap_phys[ex] = SurrogatePhysics(ex, log=lambda m: None)
+    except FileNotFoundError as e:
+        raise HTTPException(409, str(e))
+    res = RB.resimulate(d, req.trigger, req.targets, req.n_scenarios, phys=_roadmap_phys[ex])
+    return _json.loads(_json.dumps(res, ensure_ascii=False, default=RR._json))
+
+
 @app.get("/explore")
 def explore_page():
     """Exploration without stakeholder weights (scripts/run_explore.py; docs/12_explore.md)."""
@@ -124,6 +154,80 @@ def explore_result(name: str):
     if not p.exists():
         raise HTTPException(404, f"no exploration run {name}")
     return FileResponse(p, media_type="application/json", headers=NO_CACHE)
+
+
+@app.get("/api/explore/{name}/scopes")
+def explore_scopes(name: str):
+    """Trade spaces by implementing actor (scripts/run_explore.py --scopes NAME)."""
+    import re
+    from ..rdm.explore import EXPLORE_DIR
+    if not re.fullmatch(r"[\w\-.]+", name) or name.startswith("."):
+        raise HTTPException(400, "bad name")
+    p = EXPLORE_DIR / name / "scopes.json"
+    if not p.exists():
+        raise HTTPException(404, f"no actor trade spaces for {name}")
+    return FileResponse(p, media_type="application/json", headers=NO_CACHE)
+
+
+@app.get("/roadmap")
+def roadmap_page():
+    """Climate-adaptation roadmaps P0-P3 (scripts/run_roadmap.py; docs/13_roadmap.md)."""
+    return FileResponse(STATIC / "roadmap.html", headers=NO_CACHE)
+
+
+@app.get("/api/roadmap")
+def roadmap_runs():
+    from ..roadmap.run import ROADMAP_DIR
+    return [{"name": p.parent.name, "updated": p.stat().st_mtime}
+            for p in sorted(ROADMAP_DIR.glob("*/results.json"), key=lambda p: -p.stat().st_mtime)]
+
+
+@app.get("/api/roadmap-defaults")
+def roadmap_defaults():
+    """Settings and world factors for the form of /roadmap."""
+    from ..roadmap import config as RCF
+    from ..roadmap import world as RW
+    cfg = RCF.load()
+    return {"config": cfg, "factors": RW.factors(cfg)}
+
+
+@app.get("/api/roadmap/{name}")
+def roadmap_result(name: str):
+    import re
+    from ..roadmap.run import ROADMAP_DIR
+    if not re.fullmatch(r"[\w\-.]+", name) or name.startswith("."):
+        raise HTTPException(400, "bad name")
+    p = ROADMAP_DIR / name / "results.json"
+    if not p.exists():
+        raise HTTPException(404, f"no roadmap run {name}")
+    return FileResponse(p, media_type="application/json", headers=NO_CACHE)
+
+
+class RoadmapSimRequest(BaseModel):
+    config: dict = {}
+    unit: dict = {}          # world factors in [0, 1] (missing = nominal)
+    modes: dict = {}
+
+
+_roadmap_phys = {}
+
+
+@app.post("/api/roadmap/simulate")
+def roadmap_simulate(req: RoadmapSimRequest):
+    """One world with changed delays / participation / social values (surrogate physics, a few seconds)."""
+    from ..roadmap import config as RCF
+    from ..roadmap import run as RR
+    from ..roadmap.physics import SurrogatePhysics
+    cfg = RCF.load(req.config)
+    name = cfg["physics"]["explore_run"]
+    try:
+        if name not in _roadmap_phys:
+            _roadmap_phys[name] = SurrogatePhysics(name, log=lambda m: None)
+    except FileNotFoundError as e:
+        raise HTTPException(409, str(e))
+    import json as _json
+    res = RR.simulate_one(_roadmap_phys[name], req.config, unit=req.unit, modes=req.modes or None)
+    return _json.loads(_json.dumps(res, ensure_ascii=False, default=RR._json))
 
 
 @app.get("/api/basins")

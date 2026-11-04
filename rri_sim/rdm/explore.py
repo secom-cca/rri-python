@@ -200,6 +200,48 @@ class Surrogate:
         return m.std(F) if isinstance(m, GP) else np.full(len(F), 1e-6)
 
 
+def space_from_results(res):
+    """Decision space of a stored exploration (variables without cells: enough for features / costs)."""
+    from .candidates import Variable
+    hs = res["config"]["candidates"]["levee"]["heights_m"]
+    V = []
+    for v in res["variables"]:
+        if v["type"] == "levee":
+            params = [None if not h else {"height": float(h)} for h in hs]
+        elif v["type"] == "relocate":
+            params = [None, {"type": "raise", "height": 1.0}, {"type": "relocate"}]
+        else:
+            params = [None, {}]
+        V.append(Variable(v["name"], v["type"], v["zone"], v["options"], [], params, v["continuous"]))
+    return Space(V, res["config"]["sensitivity"]["parameters"])
+
+
+def surrogate_from_results(res, keys, dirs, log=print):
+    """Refit the exploration surrogate from the stored design (pickled; the first of `dirs` that has
+    the pickle is used, a new fit is saved in dirs[0])."""
+    import hashlib
+    import pickle
+    d = res["design"]
+    key = hashlib.sha1(json.dumps([d["x"], d["u"], d["y"]], sort_keys=True).encode()).hexdigest()[:12]
+    for dr in dirs:
+        pk = Path(dr) / f"surrogate_{key}.pkl"
+        if pk.exists():
+            with open(pk, "rb") as f:
+                return pickle.load(f)
+    sp = space_from_results(res)
+    U = {k: np.array([u[k] for u in d["u"]]) for k in sp.unames}
+    F = sp.features(np.array(d["x"], float), U)
+    t0 = time.time()
+    log(f"代理モデルを再学習中（{len(F)} 点 × {F.shape[1]} 次元; 一度だけ）")
+    S = Surrogate(F, {k: [y[k] for y in d["y"]] for k in keys}, res["config"]["seed"], list(keys))
+    pk = Path(dirs[0]) / f"surrogate_{key}.pkl"
+    pk.parent.mkdir(parents=True, exist_ok=True)
+    with open(pk, "wb") as f:
+        pickle.dump(S, f)
+    log(f"  学習 {time.time() - t0:.0f} s → {pk}")
+    return S
+
+
 def outputs_of(m):
     out = {k: m[k] for k in ("damage", "pop_hazard", "households", "livability", "ecology")}
     out.update({"dz:" + z: v for z, v in m["damage_zone"].items()})
@@ -465,6 +507,7 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
            "design": {"n_train": len(rows_y), "x": rows_x, "u": rows_u, "y": rows_y},
            "surrogate": {"features": Ftr.shape[1], "validation": validation},
            "objectives": obj_names, "archive": [{"x": a["x"], "f": a["f"]} for a in archive],
+           "cost_tables": [{"values": t["values"], "total": [r["total"] for r in t["rows"]]} for t in tabs],
            "pareto": [int(i) for i in par], "policies": policies, "verification": verification}
     (out / "results.json").write_text(json.dumps(res, ensure_ascii=False, default=float), encoding="utf-8")
     log(f"完了: {out / 'results.json'}（{time.time() - t0:.0f} s, RRI {res['n_simulations']} 回）")

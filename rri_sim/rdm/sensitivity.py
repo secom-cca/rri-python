@@ -330,6 +330,9 @@ def run(rdm_dir, overrides=None, evaluator=None, log=print):
     t0 = time.time()
     rdm_dir = Path(rdm_dir)
     R = json.loads((rdm_dir / "results.json").read_text(encoding="utf-8"))
+    if R.get("mode") == "surrogate":
+        raise SystemExit(f"{rdm_dir.name} は代理モデル上の RDM（run_rdm.py --surrogate）です。RRI による感度分析は対象外で、"
+                         "Sobol 指数は実行時に代理モデル上で計算済みです（GUI /rdm, docs/09 9.8）。")
     cfg = CF._merge(CF.load(R["config"]), overrides or {})
     sa = cfg["sensitivity"]
     CF.save(cfg, rdm_dir / "config_sensitivity.json")

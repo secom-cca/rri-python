@@ -1,0 +1,11 @@
+[準備] 流域モデルを読み込み中
+[準備] 表示データを準備中
+対策なし（現在気候）を計算中
+  sim #1: ['堤防・上流: +1 m', '田んぼダム・上流: 50%', '田んぼダム・下流: 100%', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.03153, 'sea_level_rise_m': 0.30766, 'rain_gamma': 1.07993, 'levee_effect': 0.5938, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 0.8793, 'raise_effect': 0.59072} -> 被害 666 億円
+  シナリオ 14 2060年: RRI 666 / 代理 627 億円
+  sim #2: ['堤防・上流: +1 m', '田んぼダム・上流: 50%', '田んぼダム・下流: 100%', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.00274, 'sea_level_rise_m': 0.66111, 'rain_gamma': 1.07993, 'levee_effect': 0.5938, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 0.8793, 'raise_effect': 0.59072} -> 被害 597 億円
+  シナリオ 14 2095年: RRI 597 / 代理 589 億円
+  sim #3: ['堤防・上流: +1 m', '堤防・下流: +2 m', '田んぼダム・上流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.0732, 'sea_level_rise_m': 0.15102, 'rain_gamma': 1.07717, 'levee_effect': 0.68691, 'retention_effect': 0.55532, 'paddy_effect': 0.35531, 'forest_effect': 0.60037, 'raise_effect': 0.60643} -> 被害 721 億円
+  シナリオ 12 2060年: RRI 721 / 代理 743 億円
+  sim #4: ['堤防・上流: +2 m', '堤防・下流: +2 m', '田んぼダム・上流: 50%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '雨水貯留（公共）・上流: 30 mm', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.12219, 'sea_level_rise_m': 0.21891, 'rain_gamma': 1.07717, 'levee_effect': 0.68691, 'retention_effect': 0.66078, 'paddy_effect': 0.46078, 'forest_effect': 0.70583, 'raise_effect': 0.60643} -> 被害 751 億円
+  シナリオ 12 2095年: RRI 751 / 代理 741 億円

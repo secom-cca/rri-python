@@ -12,7 +12,7 @@
   <b>🔎 施策の探索 — 被害目標・費用・指標の生データ（重みなし）</b>
   <select id="run"></select>
   <span id="meta" class="hint"></span>
-  <span class="links"><a href="/">詳細画面</a> · <a href="/rdm">RDM</a> · <a href="/dapp">DAPP</a> · <a href="/play">ゲーム</a></span>
+  <span class="links"><a href="/">詳細画面</a> · <a href="/rdm">RDM</a> · <a href="/dapp">DAPP</a> · <a href="/play">ゲーム</a> · <a href="/roadmap">ロードマップ</a></span>
 </header>
 <main>
   <section class="card wide" id="summary"></section>
@@ -25,7 +25,25 @@
     <div id="choice"></div>
     <div class="hint">達成率＝不確実性のサンプル（代理モデル）のうち、被害額が目標以下となる割合。目標・降雨倍率の範囲はここで変えて再集計する（再計算なし）。</div>
   </section>
-  <section class="card"><h2>費用と達成率 <span class="hint">（Pareto 解、色＝Ecology、クリックで選択）</span></h2><canvas id="scatter" height="300"></canvas></section>
+  <section class="card wide"><h2>トレードスペース（実施主体の範囲別） <span class="hint">（点をクリックで「選択した案」に表示）</span></h2>
+    <div class="ctl">
+      横軸 <select id="ax-x"></select> ／ 縦軸 <select id="ax-y"></select>
+      ／ <label><input type="checkbox" id="show-all" checked> Pareto 解以外の案も表示</label>
+      ／ <label><input type="checkbox" id="show-pol"> 探索の Pareto 解（色＝Ecology）</label>
+    </div>
+    <div class="ctl" id="sc-chips"></div>
+    <div class="ctl" id="ms-chips"></div>
+    <canvas id="scatter" width="1000" height="400"></canvas>
+    <div class="hint" id="sc-note"></div>
+    <h2 style="margin-top:10px">目標を満たす最小の費用（範囲別） <span class="hint" id="sc-goal"></span></h2>
+    <div style="overflow-x:auto"><table id="sc-tab" class="tbl"></table></div>
+    <div class="hint">各範囲で、上の「目標・必要な達成率・降雨倍率」を満たす案のうち最も安い案。「全主体比」＝全主体で連携した場合の費用に対する倍率。
+      費用の内訳は実施主体別（現在価値）。範囲の Pareto 線は表示中の2軸についての非劣解。</div>
+    <h2 style="margin-top:10px">施策ごとの効き方 <span class="hint" id="ms-goal"></span></h2>
+    <div style="overflow-x:auto"><table id="ms-tab" class="tbl"></table></div>
+    <div class="hint">「除いたとき」＝その施策を使わない案だけで、上の目標を満たす最小の費用と、到達できる最大の達成率（チェックを外した施策も除く）。
+      「それだけ」＝その施策だけを使う案。差が大きい施策ほど、目標の達成に効いている（代わりがきかない）。
+      施策の有無の絞り込みは保存済みの案から選ぶだけで再計算しないため、絞り込んだ組合せについては最適化しておらず、費用は上限側の目安になる。</div></section>
   <section class="card"><h2>選択した案 <span id="sel-name" class="hint"></span></h2><div id="detail"></div></section>
   <section class="card"><h2>降雨倍率と達成率</h2><canvas id="byrain" height="240"></canvas>
     <div class="hint">降雨倍率の区間ごとの達成率（他の不確実性は区間内でばらつく）。</div></section>

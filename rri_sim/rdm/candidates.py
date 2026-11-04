@@ -5,11 +5,17 @@ nothing".  `edits(x, scen)` turns a decision vector into GUI-engine edits
 (the same measures as the GUI: levee / retention / paddy_dam / forest /
 relocate / raise), so the RRI model is used unchanged.
 
-    levee      per zone: main rivers (upstream area >= min_area_km2), existing levee + 0/1/2 m
+    levee      per zone: existing levee + 0/1/2 m on the river cells with upstream area >= min_area_km2;
+               select "overflow": only those whose peak water level in the baseline reaches the crest
+               (ground + existing levee) within margin_m (where the river actually overtops)
     retention  n sites: farmland/forest next to a large river, low HAND, not built-up
     paddy_dam  per zone: all paddies
     forest     per zone: farmland with HAND >= hand_min_m (upland)
     relocate   per zone: homes flooded >= depth_min_m in the baseline: none / raise / relocate
+    pump_urban      per zone: 排水ポンプ（下水道）on low (HAND <= hand_max_m) built-up cells flooded >= depth_min_m
+    pump_agri       per zone: 排水機場（農業用排水）on low farmland cells flooded >= depth_min_m
+    storage_public  per zone: 雨水貯留浸透（公共: 調整池・貯留管）on built-up cells flooded >= depth_min_m
+    storage_private per zone: 雨水貯留浸透（各戸: 民間・個人）on the same cells (implementation rate in the exploration)
 
 A variable with `continuous=True` (paddy_dam / forest in the exploration, explore.py)
 takes an implementation rate in [0, 1] instead of an option index: the first
@@ -78,7 +84,7 @@ def _grow_site(seed, ok, nx, n_cells):
     return site
 
 
-def build(d, meta, hand, assets, class_names, baseline_depth, cfg) -> list[Variable]:
+def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_river_hmax=None) -> list[Variable]:
     c = cfg["candidates"]
     ny, nx = d.shape
     zm = zone_masks(d, meta, cfg["zones"])
@@ -95,8 +101,12 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg) -> list[Varia
     # levee: main rivers per zone
     lv = c.get("levee")
     if lv is not None:
+        ok = r.area_km2 >= lv["min_area_km2"]
+        if lv.get("select") == "overflow" and baseline_river_hmax is not None:
+            crest = d.z[r.ri, r.rj] + r.embankment
+            ok &= r.zb + np.asarray(baseline_river_hmax) >= crest - lv.get("margin_m", 0.2)
         for z in zm:
-            ks = np.flatnonzero((r.area_km2 >= lv["min_area_km2"]) & (zone_of[riv_flat] == z))
+            ks = np.flatnonzero(ok & (zone_of[riv_flat] == z))
             if len(ks):
                 hs = lv["heights_m"]
                 out.append(Variable(f"堤防・{z}", "levee", z, [f"+{x} m" if x else "なし" for x in hs], riv_flat[ks].tolist(),
@@ -147,6 +157,31 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg) -> list[Varia
                 out.append(Variable(f"住宅対策・{z}", "relocate", z, ["なし", f"嵩上げ +{rl['raise_m']} m", "移転"], cells.tolist(),
                                     [None, {"type": "raise", "height": float(rl["raise_m"]), "terrain": False},
                                      {"type": "relocate", "dest": rl["dest"], "density": 40}]))
+    # 内水対策 (inland flooding): where the baseline floods (depth >= depth_min_m)
+    inl = {k: c[k] for k in ("pump_urban", "pump_agri", "storage_public", "storage_private") if c.get(k) is not None}
+    if inl and baseline_depth is not None:
+        bd = np.nan_to_num(baseline_depth).ravel()
+        urban = lc == ci["urban"]
+        farm = np.isin(lc, [ci[n] for n in ("paddy", "field") if n in ci])
+        for z, m in zm.items():
+            mz = m.ravel()
+            for k, spec in inl.items():
+                wet = bd >= spec.get("depth_min_m", 0.1)
+                low = h <= spec.get("hand_max_m", 5.0)
+                if k == "pump_urban":
+                    cells, lab, par = mz & low & urban & wet, f"+{spec['mmh']:.0f} mm/h", {"type": "pump", "target": "urban", "mmh": float(spec["mmh"])}
+                    name = f"排水ポンプ（下水道）・{z}"
+                elif k == "pump_agri":
+                    cells, lab, par = mz & low & farm & wet, f"+{spec['mmh']:.0f} mm/h", {"type": "pump", "target": "agri", "mmh": float(spec["mmh"])}
+                    name = f"排水機場（農業）・{z}"
+                else:
+                    kind = "public" if k == "storage_public" else "private"
+                    cells, lab = mz & urban & wet, f"{spec['depth_mm']:.0f} mm"
+                    par = {"type": "storage", "depth_mm": float(spec["depth_mm"]), "release_mmh": float(spec.get("release_mmh", 2.0)), "kind": kind}
+                    name = f"雨水貯留（{'公共' if kind == 'public' else '各戸'}）・{z}"
+                idx = np.flatnonzero(cells)
+                if len(idx) >= spec.get("min_cells", 1):
+                    out.append(Variable(name, k, z, ["なし", lab], idx.tolist(), [None, par]))
     return out
 
 

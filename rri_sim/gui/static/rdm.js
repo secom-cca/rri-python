@@ -1,8 +1,11 @@
 // RDM results viewer: GET /api/rdm (runs), /api/rdm/<name> (results.json of scripts/run_rdm.py)
 const $ = (id) => document.getElementById(id);
 const TYPE = { levee: ['堤防', '#7c4a1e'], retention: ['遊水地', '#db2777'], paddy_dam: ['田んぼダム', '#06b6d4'],
-  forest: ['森林化', '#15803d'], relocate: ['住宅対策', '#8b5cf6'] };
-const CLIM = { current: ['現在気候', '#2563eb'], '2C': ['2℃上昇', '#f59e0b'], '4C': ['4℃上昇', '#dc2626'] };
+  forest: ['森林化', '#15803d'], relocate: ['住宅対策', '#8b5cf6'], pump_urban: ['排水ポンプ（下水道）', '#0f766e'],
+  pump_agri: ['排水機場（農業）', '#65a30d'], storage_public: ['雨水貯留（公共）', '#2563eb'], storage_private: ['雨水貯留（各戸）', '#93c5fd'] };
+const CLIM0 = { current: ['現在気候', '#2563eb'], '2C': ['2℃上昇', '#f59e0b'], '4C': ['4℃上昇', '#dc2626'] };
+let CLIM = CLIM0;     // surrogate runs: classes of the rain factor (results surrogate.climate_bins)
+const SUR = () => R && R.mode === 'surrogate';
 const ZONE_TINT = ['#dbeafe', '#dcfce7', '#fef3c7', '#fce7f3', '#e0e7ff'];
 const fmt = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d }));
 const dec = (b, T) => { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new T(u.buffer); };
@@ -25,6 +28,7 @@ async function load(name) {
   $('sb-target').innerHTML = Object.keys(R.sobol).map((s) => `<option>${s}</option>`).join('');
   $('rg-st').onchange = () => { drawRegret(); drawRobust(); };
   $('pf-color').onchange = drawPareto; $('pf-st').onchange = drawPareto; $('sb-target').onchange = drawSobol;
+  CLIM = SUR() ? Object.fromEntries(R.surrogate.climate_bins.map(([, k, lab]) => [k, [lab, CLIM0[k]?.[1] || '#64748b']])) : CLIM0;
   if (R.map) { R.map._mask = dec(R.map.mask, Uint8Array); R.map._zone = dec(R.map.zone_id, Uint8Array); }
   sel = R.policies[R.robustness.overall.minimax].archive;
   $('meta').textContent = `${R.config.basin} ${R.config.res} m・${R.config.event}・作成 ${R.created}・計算 ${fmt(R.elapsed_s / 60, 1)} 分・RRI ${R.n_simulations ?? '—'} 回`;
@@ -32,22 +36,27 @@ async function load(name) {
   await loadSA(name);
 }
 const policyOf = (ai) => R.policies.findIndex((p) => p.archive === ai);
-function descOf(x) { return R.variables.map((v, i) => (x[i] ? `${v.name}: ${v.options[x[i]]}` : null)).filter(Boolean); }
+function descOf(x) { return R.variables.map((v, i) => (x[i] ? `${v.name}: ${v.continuous ? `${Math.round(100 * x[i])}%` : v.options[x[i]]}` : null)).filter(Boolean); }
 
 function drawSummary() {
   const rob = R.robustness, ov = rob.overall.minimax, P = R.policies, a0 = R.archive[P[0].archive];
   const recs = Object.entries(rob.stakeholders).map(([n, s]) => `<li><b>${n}</b>: ${P[s.minimax].label}（最大 Regret ${fmt(s.summary.max[s.minimax], 3)}、許容閾値達成率 ${fmt(s.summary.satisficing[s.minimax] * 100)}%）</li>`).join('');
   const ar = R.archive[P[ov].archive];
   $('summary').innerHTML = `<div class="kpis">
-    <div class="kpi"><div class="l">予算（現在価値）</div><div class="v">${fmt(R.config.budget_oku)} 億円</div></div>
+    ${SUR() ? `<div class="kpi"><div class="l">予算制約</div><div class="v">なし</div></div>
+    <div class="kpi"><div class="l">代理モデル（探索 ${R.surrogate.explore_run}）</div><div class="v">R² ${fmt(R.surrogate.validation.damage.r2, 2)}・判定一致 ${fmt(R.surrogate.verification.agreement * 100)}%</div></div>`
+    : `<div class="kpi"><div class="l">予算（現在価値）</div><div class="v">${fmt(R.config.budget_oku)} 億円</div></div>`}
     <div class="kpi"><div class="l">候補施策（変数）</div><div class="v">${R.variables.length}</div></div>
-    <div class="kpi"><div class="l">評価した組合せ</div><div class="v">${R.archive.length}</div></div>
+    <div class="kpi"><div class="l">評価した組合せ</div><div class="v">${fmt(SUR() ? R.surrogate.n_policies : R.archive.length)}</div></div>
     <div class="kpi"><div class="l">Pareto 最適解</div><div class="v">${R.pareto.length}</div></div>
     <div class="kpi"><div class="l">共通シナリオ</div><div class="v">${R.scenarios.length}</div></div>
     <div class="kpi"><div class="l">対策なしの被害額（名目）</div><div class="v">${fmt(a0.damage)} 億円</div></div></div>
     <div class="rec-box">🏅 <b>Minimax Regret 推奨案（全意思決定者の最大 Regret ÷ 許容閾値 が最小）: ${P[ov].label}</b>
       — 事業費 ${fmt(ar.cost)} 億円、名目被害額 ${fmt(ar.damage)} 億円（対策なし ${fmt(a0.damage)}）<br>${P[ov].desc.join('、')}
-      <ul style="margin:6px 0 0">${recs}</ul></div>`;
+      <ul style="margin:6px 0 0">${recs}</ul></div>`
+    + (SUR() ? `<p class="hint">代理モデル RDM（RRI なし）: 探索 ${R.surrogate.explore_run} の代理モデルで ${fmt(R.surrogate.n_policies)} 案 × 共通シナリオ ${R.surrogate.n_scenarios} を評価。
+      予算制約は置かず、効用の費用項は ${fmt(R.surrogate.cost_scale_oku)} 億円で正規化。Regret は全 ${fmt(R.surrogate.n_policies)} 案の中の、そのシナリオでの最良案との差。
+      下のグラフ・表は推奨案と総合の相対 Regret が小さい順の ${R.policies.length} 案（施策なしを含む）。</p>` : '');
 }
 
 function ramp(t) { t = Math.max(0, Math.min(1, t)); const a = [239, 68, 68], b = [250, 204, 21], c = [22, 163, 74];
@@ -60,7 +69,7 @@ function drawPareto() {
   const good = (v) => (up > lo ? (key === 'households' ? (up - v) : (v - lo)) / (up - lo) : 0.5);
   const pt = (i) => ({ x: A[i].cost, y: A[i].damage, i });
   chart('pareto', { type: 'scatter', data: { datasets: [
-    { label: '評価済み（予算内）', data: feas.filter((i) => !hi.includes(i)).map(pt), backgroundColor: '#cbd5e1', pointRadius: 3 },
+    { label: SUR() ? '評価済み' : '評価済み（予算内）', data: feas.filter((i) => !hi.includes(i)).map(pt), backgroundColor: '#cbd5e1', pointRadius: 3 },
     { label: st ? `${st} の Pareto` : 'Pareto 最適解', data: hi.map(pt), backgroundColor: hi.map((i) => ramp(good(A[i][key]))), borderColor: '#334155', pointRadius: 6 },
     { label: '頑健性評価の対象', data: R.policies.map((p) => pt(p.archive)), pointStyle: 'rectRot', pointRadius: 8, backgroundColor: 'transparent', borderColor: '#0e7490', borderWidth: 2 },
     { label: '推奨案', data: [pt(R.policies[R.robustness.overall.minimax].archive)], pointStyle: 'star', pointRadius: 14, borderColor: '#f59e0b', borderWidth: 3 }] },
@@ -98,7 +107,7 @@ function drawMap() {
 
 function drawParallel() {
   const A = R.archive, keys = [['damage', '被害額', 1], ['cost', '事業費', 1], ['households', '床上浸水', 1], ['livability', 'Livability', -1], ['ecology', 'Ecology', -1]];
-  const idx = R.pareto, rec = R.policies[R.robustness.overall.minimax].archive;
+  const idx = R.parallel || R.pareto, rec = R.policies[R.robustness.overall.minimax].archive;
   const rng = keys.map(([k]) => [Math.min(...idx.map((i) => A[i][k])), Math.max(...idx.map((i) => A[i][k]))]);
   const norm = (i) => keys.map(([k, , sgn], j) => { const [lo, hi] = rng[j]; const t = hi > lo ? (A[i][k] - lo) / (hi - lo) : 0.5; return sgn > 0 ? t : 1 - t; });
   chart('parallel', { type: 'line', data: { labels: keys.map((k) => k[1]), datasets: idx.map((i) => ({
@@ -145,12 +154,22 @@ function drawSobol() {
   chart('sobol', { type: 'bar', data: { labels: f.map((k) => R.sobol_factors[k] || k), datasets: [
     { label: '一次 S1', data: f.map((k) => S[k].S1), backgroundColor: '#0e7490' }, { label: '全 ST', data: f.map((k) => S[k].ST), backgroundColor: '#f59e0b' }] },
     options: { indexAxis: 'y', animation: false, scales: { x: { min: 0, max: 1 } } } });
+  if (SUR()) { $('sb-note').textContent = `代理モデル（探索 ${R.surrogate.explore_run}）上の Saltelli 法（N=${R.config.surrogate_rdm.sobol.n_base}）。`
+    + `Regret の最良案は各意思決定者の上位案から取った ${R.surrogate.sobol_pool} 案で近似（共通シナリオでの最良案の一致率 ${Object.entries(R.surrogate.sobol_best_coverage).map(([n, v]) => `${n} ${fmt(v * 100)}%`).join('、')}）。`; return; }
   const n = R.config.scenarios.n_per_climate;
   $('sb-note').textContent = `代理モデル（シミュレーションした ${R.sims.length} シナリオへのリッジ回帰）上の Saltelli 法（N=${R.config.sobol.n_base}）。`
     + (n <= 1 ? '気候以外のシミュレーション係数は気候ごとに1点（名目値）しか計算していないため、その指数は推定できず0に近く出る。--quick ではなく n_per_climate ≥ 3 で実行すること。' : '');
 }
 
 function drawScenarios() {
+  if (SUR()) {
+    const U = R.surrogate.uncertainties, n = (k) => R.sims.filter((s) => s.climate === k).length;
+    $('scen').innerHTML = '<tr><th>不確実性</th><th>範囲</th><th>名目</th><th>種類</th></tr>'
+      + Object.entries(U).map(([k, u]) => `<tr><td style="text-align:left">${u.label || k}</td><td>${u.low}–${u.high}</td><td>${u.nominal}</td><td>${u.kind === 'sim' ? '代理モデルの入力' : '事後に乗じる'}</td></tr>`).join('')
+      + `<tr><th colspan="4">共通シナリオ ${R.sims.length}（探索の Sobol 列、全因子を同時に一様に変える）の色分け</th></tr>`
+      + Object.entries(CLIM).map(([k, [lab, col]]) => `<tr><td colspan="3" style="text-align:left"><span style="color:${col}">●</span> ${lab}</td><td>${n(k)}</td></tr>`).join('');
+    return;
+  }
   const U = R.config.uncertainties;
   const simk = Object.keys(U).filter((k) => U[k].kind === 'sim'), postk = Object.keys(U).filter((k) => U[k].kind === 'post');
   $('scen').innerHTML = `<tr><th>シミュレーションしたシナリオ</th>${simk.map((k) => `<th>${k}</th>`).join('')}</tr>`

@@ -38,7 +38,7 @@ def setup_rri(cfg, cache_path, log=print):
     log("対策なし（現在気候）を計算中")
     base = s.run(cfg["event"])
     zm = CA.zone_masks(s.d, s.meta, cfg["zones"])
-    variables = CA.build(s.d, s.meta, s.hand, s.assets, s.class_names, base["_depth"], cfg)
+    variables = CA.build(s.d, s.meta, s.hand, s.assets, s.class_names, base["_depth"], cfg, base.get("_river_hmax"))
     ev = RRIEvaluator(s, cfg, variables, zm, cache_path, log)
     d, r = s.d, s.d.river
     zone_id = np.zeros(d.shape, np.uint8)

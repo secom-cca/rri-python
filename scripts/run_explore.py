@@ -4,6 +4,7 @@
     python scripts/run_explore.py                           # full design (about 450 RRI runs)
     python scripts/run_explore.py --config my.json          # settings merged over rri_sim/rdm/config.py DEFAULT
     python scripts/run_explore.py --print-default > my.json
+    python scripts/run_explore.py --scopes abukuma_explore_v2   # trade spaces by actor (国／自治体／地域) on a finished run
 
 Results: data/processed/explore/<explore.name>/{config_explore.json, evaluations.jsonl, results.json};
 GUI: http://127.0.0.1:8765/explore .  Re-runs re-use the simulation cache.
@@ -20,11 +21,16 @@ ap.add_argument("--config")
 ap.add_argument("--quick", action="store_true")
 ap.add_argument("--name")
 ap.add_argument("--print-default", action="store_true")
+ap.add_argument("--scopes", metavar="NAME", help="trade spaces by implementing actor for a finished run (no RRI)")
 a = ap.parse_args()
 if a.print_default:
     json.dump(CF.DEFAULT, sys.stdout, ensure_ascii=False, indent=2)
     sys.exit()
 cfg = CF.load(a.config) if a.config else CF.load()
+if a.scopes:
+    from rri_sim.rdm import explore_scope
+    explore_scope.run(a.scopes, CF.load(a.config) if a.config else None, log=lambda m: print(m, flush=True))
+    sys.exit()
 if a.quick:
     cfg = CF._merge(cfg, CF.QUICK_EX)
 if a.name:

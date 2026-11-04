@@ -18,7 +18,7 @@
 <div id="app">
   <aside id="left">
     <h1>流域治水シミュレーター <small>RRI-python</small></h1>
-    <div class="hint"><a href="/play">授業向けゲーム</a> · <a href="/rdm">RDM 分析結果（頑健な施策の組合せ）</a> · <a href="/dapp">DAPP（適応経路）</a> · <a href="/explore">施策の探索（被害目標・重みなし）</a></div>
+    <div class="hint"><a href="/play">授業向けゲーム</a> · <a href="/rdm">RDM 分析結果（頑健な施策の組合せ）</a> · <a href="/dapp">DAPP（適応経路）</a> · <a href="/explore">施策の探索（被害目標・重みなし）</a> · <a href="/roadmap">適応ロードマップ（P0〜P3）</a></div>
 
     <section>
       <label>流域 <select id="basin"></select></label>
@@ -61,6 +61,8 @@
         <button data-tool="raise" title="住宅の嵩上げ（床高）／盛土">⬆ 嵩上げ</button>
         <button data-tool="levee" title="範囲内の河道に堤防を設置">🧱 堤防</button>
         <button data-tool="retention" title="遊水地：掘削＋越流堤">◯ 遊水地</button>
+        <button data-tool="pump" title="内水対策: 低地の排水ポンプ・排水機場を増強">⛽ 排水ポンプ</button>
+        <button data-tool="storage" title="内水対策: 市街地の雨水貯留浸透施設（調整池・各戸貯留）">🛢 雨水貯留</button>
       </div>
       <label>ブラシ半径 <input id="brush" type="range" min="0" max="8" value="2"> <span id="brush-v">2</span> セル <span class="hint" id="brush-m"></span></label>
       <div id="tool-params">
@@ -82,6 +84,14 @@
         <div data-for="levee"><label>既存堤防から ＋ <input id="levee-h" type="number" value="1.0" step="0.5" min="0.5" max="10"> m</label>
           <div class="hint">既存堤防（5 m標高から推定）の上に積み増し。堤防のない河道では 0＋○ m。現在の堤防高は表示「堤防高」で確認。</div>
           </div>
+        <div data-for="pump"><label>対象 <select id="pm-target"><option value="urban">低地の市街地（下水道ポンプ: 市町村）</option>
+            <option value="agri">低地の農地（農業用排水機場: 国・県・土地改良区）</option></select></label>
+          <label>排水能力の増強 <input id="pm-mmh" type="number" value="10" step="1" min="1" max="50"> mm/h</label>
+          <div class="hint">HAND 5 m 以下のセルの湛水を河道へ排水（既存の低地排水に上乗せ）。費用は排水能力 m³/s あたり（単価設定）。</div></div>
+        <div data-for="storage"><label>貯留量 <input id="st-depth" type="number" value="30" step="5" min="5" max="200"> mm（セル面積あたり）</label>
+          <label>放流 <input id="st-rel" type="number" value="2" step="0.5" min="0.5" max="20"> mm/h</label>
+          <label>実施主体 <select id="st-kind"><option value="public">公共（調整池・貯留管: 市町村・県・下水道）</option>
+            <option value="private">各戸（貯留タンク・浸透ます: 民間・個人）</option></select></label></div>
         <div data-for="retention"><label>貯留深（掘削＋周囲堤） <input id="ret-d" type="number" value="3.0" step="0.5" min="0.5" max="10"> m</label>
           <label class="chk"><input id="ret-auto" type="checkbox" checked> 越流開始流量を自動設定（この洪水で容量がちょうど満杯になる流量。完全予見のため効果は最大＝楽観的）</label>
           <label id="ret-q-l">越流開始流量 <input id="ret-q" type="number" value="70" step="5" min="10" max="100"> % （現況ピーク流量比）</label>

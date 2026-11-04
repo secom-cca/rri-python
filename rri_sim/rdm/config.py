@@ -17,11 +17,18 @@ DEFAULT = {
     # zones: nested catchments of gauges, upstream first; the last zone (gauge null) is the rest
     "zones": [["上流", "本宮"], ["中流", "伏黒"], ["下流", None]],
     "candidates": {
-        "levee": {"min_area_km2": 300.0, "heights_m": [0, 1, 2]},            # per zone, main rivers
+        # per zone; "overflow": river cells (>= min_area_km2) that overtop in the baseline (within margin_m),
+        # "area": all of them (the earlier default with min_area_km2 300 = main rivers, which hardly overtop at 1000 m)
+        "levee": {"min_area_km2": 5.0, "heights_m": [0, 1, 2], "select": "overflow", "margin_m": 0.2},
         "retention": {"n_sites": 3, "depth_m": 3.0, "site_km2": 2.0, "hand_max_m": 3.0, "min_river_km2": 300.0},
         "paddy_dam": {},                                                      # per zone, all paddies
         "forest": {"hand_min_m": 20.0},                                       # per zone, upland farmland
         "relocate": {"depth_min_m": 1.0, "raise_m": 1.0, "dest": "new"},      # per zone: none / raise / relocate
+        # 内水対策 (流域治水施策集 #5 #6 #8–#10): on cells flooded >= depth_min_m in the baseline
+        "pump_urban": {"mmh": 10.0, "hand_max_m": 5.0, "depth_min_m": 0.1, "min_cells": 3},
+        "pump_agri": {"mmh": 3.0, "hand_max_m": 5.0, "depth_min_m": 0.1, "min_cells": 3},
+        "storage_public": {"depth_mm": 30.0, "release_mmh": 2.0, "depth_min_m": 0.1, "min_cells": 3},
+        "storage_private": {"depth_mm": 10.0, "release_mmh": 2.0, "depth_min_m": 0.1, "min_cells": 3},
     },
     "optimisation": {"pop": 12, "gens": 4, "p_mutation": 0.15},
     # scenario design: every climate x n_per_climate LHS samples of the simulated factors;
@@ -98,7 +105,7 @@ DEFAULT = {
     "explore": {
         "name": "abukuma_explore",
         "target_ratio": 1.0,                  # 目標: 被害額 <= 現在気候・対策なしの被害額 x target_ratio
-        "continuous": ["paddy_dam", "forest"],   # implementation rate 0-100 % of the candidate cells
+        "continuous": ["paddy_dam", "forest", "storage_private"],   # implementation rate 0-100 % of the candidate cells
         "cell_order": "random",               # which cells a partial rate takes ("random" = spatially uniform, seeded)
         "current_baseline": True,             # measures set against the current-climate baseline (no extra run per climate)
         "zero_share": 0.2,                    # share of training samples with a rate of exactly 0 (measure not used)
@@ -109,6 +116,33 @@ DEFAULT = {
         "verify": {"n_policies": 10, "n_scenarios": 12},
         "target_curve": [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
         "rain_bins": 5,
+        # trade spaces by implementing actor (explore_scope.py, docs/12): measure type -> actor
+        # (流域治水施策集の実施主体, docs/13 13.10); actors in `zonal` are split by zone (自治体・上流, ...)
+        "scopes": {
+            "actors": {"levee": "国", "retention": "国",
+                       "pump_urban": "自治体", "pump_agri": "自治体", "storage_public": "自治体", "relocate": "自治体",
+                       "paddy_dam": "地域", "forest": "地域", "storage_private": "地域"},
+            "zonal": ["自治体"],
+            "optimisation": {"pop": 64, "gens": 40, "p_mut": 0.15,
+                             "objectives": ["cost", "reliability", "damage_mean", "ecology", "livability"]},
+            "max_points": 1500,               # stored per actor combination (non-dominated first, then a random sample)
+        },
+    },
+    # ---- RDM on the exploration surrogate (rdm_surrogate.py, docs/09 9.8): no RRI runs, no budget constraint;
+    # stakeholders / thresholds as above, uncertainties = sensitivity.parameters (the exploration's ranges)
+    "surrogate_rdm": {
+        "name": "abukuma_rdm_surrogate",
+        "explore_run": "abukuma_explore_v2",
+        "cost_scale_oku": 2000.0,             # normalises the cost term of the utilities (was the budget; no constraint)
+        "n_scenarios": 512,                   # common scenarios = the exploration's uncertainty ensemble (Sobol sequence)
+        # NSGA-II on the stakeholders' mean utilities (adds policies that are good for someone to the pool)
+        "optimisation": {"pop": 64, "gens": 40, "p_mut": 0.15, "n_scenarios": 128},
+        "n_display": 20,                      # policies shown in the Regret charts / table
+        "archive_display": 6000,              # evaluated policies shown in the Pareto chart (Pareto ones first)
+        "sobol": {"n_base": 256, "pool_per_stakeholder": 300},
+        # scenario colour classes by the rain factor (MLIT 降雨量変化倍率: 2℃ 1.1, 4℃ 1.2)
+        "climate_bins": [[1.05, "current", "現在気候相当（降雨倍率 < 1.05）"], [1.15, "2C", "2℃相当（1.05–1.15）"],
+                         [9.99, "4C", "4℃相当以上（≥ 1.15）"]],
     },
 }
 
@@ -136,6 +170,9 @@ def save(cfg: dict, path) -> None:
 
 QUICK_SA = {"sensitivity": {"morris": {"r": 2, "levels": 4}, "surrogate": {"n_train": 10, "n_val": 5},
                             "sobol": {"log2_n": 11, "n_boot": 100}}}
+
+QUICK_SUR = {"surrogate_rdm": {"name": "abukuma_rdm_surrogate_quick", "n_scenarios": 128,
+                               "optimisation": {"pop": 16, "gens": 3, "n_scenarios": 32}, "sobol": {"n_base": 64, "pool_per_stakeholder": 50}}}
 
 QUICK = {"name": "abukuma_quick", "optimisation": {"pop": 8, "gens": 2},
          "scenarios": {"climates": ["current", "2C", "4C"], "n_per_climate": 1, "n_post": 8},

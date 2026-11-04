@@ -39,6 +39,15 @@ UNIT_COSTS = {
     "relocate_yen_employee": {"value": 3.0e6, "label": "事業所移転（従業者1人）", "unit": "円/人", "basis": "仮定"},
     "raise_floor_yen_household_m": {"value": 6.0e6, "label": "住宅嵩上げ（1世帯・1 m）", "unit": "円/世帯/m", "basis": "仮定（曳家・ジャッキアップ工法）"},
     "raise_fill_yen_m3": {"value": 5000.0, "label": "宅地盛土", "unit": "円/m³", "basis": "仮定"},
+    "pump_yen_m3s": {"value": 3.0e8, "label": "排水ポンプ・排水機場（排水能力 1 m³/s）", "unit": "円/(m³/s)",
+                     "basis": "仮定（排水機場の事業費の目安 数億円/(m³/s)）"},
+    "pump_annual_yen_m3s": {"value": 6.0e6, "label": "排水ポンプの維持管理（年）", "unit": "円/(m³/s)/年", "basis": "仮定（初期費用の2%/年）"},
+    "storage_public_yen_m3": {"value": 5.0e4, "label": "雨水貯留浸透（公共: 調整池・貯留管）", "unit": "円/m³", "basis": "仮定"},
+    "storage_private_yen_m3": {"value": 1.0e5, "label": "雨水貯留浸透（各戸: 貯留タンク・浸透ます）", "unit": "円/m³", "basis": "仮定"},
+    "storage_annual_yen_m3": {"value": 500.0, "label": "雨水貯留施設の維持（年）", "unit": "円/m³/年", "basis": "仮定（初期費用の1%/年）"},
+    "prerelease_yen_dam": {"value": 1.0e8, "label": "事前放流（予測システム・操作規則, 1ダム）", "unit": "円/ダム", "basis": "仮定"},
+    "prerelease_annual_yen_dam": {"value": 5.0e7, "label": "事前放流の利水補填（期待値, 1ダム・年）", "unit": "円/ダム/年",
+                                  "basis": "仮定（水位が回復しない場合の損失補填の期待値）"},
 }
 
 
@@ -83,6 +92,15 @@ def estimate(edits_applied: list[dict], unit: dict | None = None) -> dict:
             annual = q["farm_area_m2"] / 1e4 * u["crop_loss_yen_ha_yr"]
         elif t == "relocate":
             init = q["households"] * u["relocate_yen_household"] + q["employees"] * u["relocate_yen_employee"]
+        elif t == "pump":
+            init = q["capacity_m3s"] * u["pump_yen_m3s"]
+            annual = q["capacity_m3s"] * u["pump_annual_yen_m3s"]
+        elif t == "storage":
+            init = q["volume_m3"] * u["storage_private_yen_m3" if q.get("kind") == "private" else "storage_public_yen_m3"]
+            annual = q["volume_m3"] * u["storage_annual_yen_m3"]
+        elif t == "prerelease":
+            init = q["n_dams"] * u["prerelease_yen_dam"]
+            annual = q["n_dams"] * u["prerelease_annual_yen_dam"]
         elif t == "raise":
             if q.get("terrain"):
                 init = q["area_m2"] * q["height_m"] * u["raise_fill_yen_m3"]

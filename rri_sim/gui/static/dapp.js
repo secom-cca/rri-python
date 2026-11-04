@@ -18,6 +18,13 @@ async function init() {
 }
 async function load(name) {
   D = await (await fetch(`/api/dapp/${encodeURIComponent(name)}`)).json();
+  const robust = D.mode === 'robust', multi = D.mode === 'multi';
+  $('classic').style.display = robust || multi ? 'none' : '';
+  $('robust').hidden = false; $('robust').style.display = robust ? '' : 'none';
+  $('multi').hidden = false; $('multi').style.display = multi ? '' : 'none';
+  $('clim-box').style.display = robust || multi ? 'none' : '';
+  if (robust) { (await import('/static/dapp_robust.js')).render(D, name); return; }
+  if (multi) { (await import('/static/dapp_multi.js')).render(D, name); return; }
   $('clim').innerHTML = D.climates.map((c) => `<option value="${c}">${CLIM[c] || c}</option>`).join('');
   $('clim').value = D.climates[D.climates.length - 1];
   $('tl-st').innerHTML = D.strategies.map((s) => `<option>${s}</option>`).join('');

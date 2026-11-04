@@ -15,6 +15,9 @@ const TOOL = {
   raise:     { jp: '嵩上げ',     color: '#f59e0b' },
   levee:     { jp: '堤防',       color: '#7c4a1e' },
   retention: { jp: '遊水地',     color: '#db2777' },
+  pump:      { jp: '排水ポンプ', color: '#0f766e' },
+  storage:   { jp: '雨水貯留浸透', color: '#2563eb' },
+  prerelease: { jp: '事前放流', color: '#475569' },
   relocate_dest: { jp: '移転先',  color: '#c084fc' },
 };
 const DEST_JP = { new: '高台の新規造成地', existing: '既存市街地へ集約', painted: '指定した移転先' };
@@ -471,6 +474,11 @@ function applicable(type, cells) {
   if (type === 'relocate' || type === 'raise') return cells.filter((c) => S.value[c] > 0 && S.hh[c] + S.value[c] / 1e8 > 0.01);
   if (type === 'retention') return cells.filter((c) => !S.riverSet.has(c) && ![id('urban'), id('water')].includes(lc[c]));
   if (type === 'relocate_dest') return cells.filter((c) => !S.riverSet.has(c) && lc[c] !== id('water'));
+  if (type === 'pump') {
+    const cls = $('pm-target').value === 'urban' ? [id('urban')] : ['paddy', 'field', 'paddy_dam', 'green'].map(id);
+    return cells.filter((c) => cls.includes(lc[c]) && st.hand[c] >= 0 && st.hand[c] <= 5);
+  }
+  if (type === 'storage') return cells.filter((c) => lc[c] === id('urban'));
   return cells;
 }
 function toolParams(t) {
@@ -478,6 +486,8 @@ function toolParams(t) {
   if (t === 'levee') return { height: +$('levee-h').value };
   if (t === 'retention') return { depth: +$('ret-d').value, auto: $('ret-auto').checked, q_ratio: +$('ret-q').value / 100 };
   if (t === 'relocate') return { dest: $('rl-dest').value, density: +$('rl-dens').value };
+  if (t === 'pump') return { target: $('pm-target').value, mmh: +$('pm-mmh').value };
+  if (t === 'storage') return { depth_mm: +$('st-depth').value, release_mmh: +$('st-rel').value, kind: $('st-kind').value };
   return {};
 }
 function describeEdit(e) {
@@ -579,6 +589,9 @@ function costTable(cost) {
     if (it.type === 'forest') return `${fmt((x.area_m2 || 0) / 1e6, 2)} km²`;
     if (it.type === 'relocate') return `${fmt(x.households, 0)} 世帯・${fmt(x.employees, 0)} 人`;
     if (it.type === 'raise') return `${fmt(x.households, 0)} 世帯・+${fmt(x.height_m)} m${x.terrain ? ' 盛土' : ''}`;
+    if (it.type === 'pump') return `${x.target === 'urban' ? '市街地' : '農地'}・排水能力 ${fmt(x.capacity_m3s, 0)} m³/s`;
+    if (it.type === 'storage') return `${x.kind === 'private' ? '各戸' : '公共'}・${fmt((x.volume_m3 || 0) / 1e6, 2)} 百万m³`;
+    if (it.type === 'prerelease') return `${fmt(x.n_dams, 0)} ダム・容量 ×${fmt(1 + x.fraction, 2)}`;
     return '';
   };
   return `<table class="ind"><tr><th>施策</th><th>数量</th><th>初期 [億円]</th><th>年 [百万円]</th><th>現在価値 [億円]</th></tr>` +
@@ -766,6 +779,8 @@ function selectTool(t) {
     : t === 'levee' ? '河道に沿って塗ると、範囲内の河道セルの堤防を既存＋指定高に（堤防なしは0＋指定高、樋門付き）'
     : t === 'retention' ? '河道沿いの土地を塗る（建物用地・河道・水域は除外）。隣接する河道の洪水を貯める'
     : t === 'paddy_dam' ? '水田セルのみ有効（他の土地利用は無視）'
+    : t === 'pump' ? '低地（HAND 5 m 以下）の市街地または農地の内水を河道へ排水（河川の水位が高くても排水）'
+    : t === 'storage' ? '建物用地のセルのみ有効。雨を貯めてゆっくり放流（内水対策）'
     : t === 'relocate_dest' ? '移転先にする範囲を塗る。終わったら「🏠 移転」で移転元を塗る'
     : t === 'erase' ? '塗った範囲の施策を取り消し' : '左ドラッグで塗る（3D・2D地図）。右ドラッグ＝移動';
 }
@@ -806,6 +821,11 @@ const BULK = {
   forest: { opts: [sel('lu', '対象', { farm: '水田・畑', field: '畑のみ', paddy: '水田のみ' }), HAND_OPT],
     cells: (v) => landCells(FO_LU[v.lu], v.hand),
     label: (v) => `${{ farm: '水田・畑', field: '畑', paddy: '水田' }[v.lu]}${v.hand > 0 ? `（HAND ${v.hand} m以上）` : ''}` },
+  pump: { opts: [sel('target', '対象', { urban: '低地の市街地（下水道ポンプ）', agri: '低地の農地（農業用排水機場）' })],
+    cells: (v) => { const st = S.st, cls = v.target === 'urban' ? ['urban'] : ['paddy', 'field'];
+      return landCells(cls, 0).filter((c) => st.hand[c] >= 0 && st.hand[c] <= 5); },
+    label: (v) => (v.target === 'urban' ? '低地の市街地' : '低地の農地') },
+  storage: { opts: [], cells: () => landCells(['urban'], 0), label: () => '全域の建物用地' },
   paddy_dam: { opts: [HAND_OPT], cells: (v) => landCells(['paddy'], v.hand),
     label: (v) => `水田${v.hand > 0 ? `（HAND ${v.hand} m以上）` : '（全域）'}` },
   relocate: { opts: AT_RISK, cells: atRisk, label: atRiskLabel },

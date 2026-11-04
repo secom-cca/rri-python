@@ -64,3 +64,53 @@ def test_explore_runs_and_finds_policies_meeting_the_target(tmp_path):
     assert len(P[0]["ratio_samples"]) == 128 and len(P[0]["reliability_curve"]) == len(cfg["explore"]["target_curve"])
     res2 = EX.run(cfg, tmp_path / "again", evaluator=FakeEvaluator(), log=lambda *a: None)
     assert res2["pareto"] == res["pareto"]                # reproducible with the seed
+
+
+def test_trade_spaces_by_actor(tmp_path):
+    from rri_sim.rdm import explore_scope as ES
+    cfg = CF.load({"explore": {"design": {"n_train": 40, "n_none": 4, "n_val": 8, "adaptive_rounds": 0, "pool": 100},
+                               "ensemble": {"n": 64}, "optimisation": {"pop": 12, "gens": 3},
+                               "verify": {"n_policies": 2, "n_scenarios": 2}}})
+    EX.run(cfg, tmp_path, evaluator=FakeEvaluator(), log=lambda *a: None)
+    doc = ES.run("fake", {"explore": {"scopes": {"optimisation": {"pop": 10, "gens": 3}, "max_points": 60}}},
+                 log=lambda *a: None, out_dir=tmp_path)
+    assert doc["actors"] == ["国", "自治体・下流", "地域"]          # 住宅対策 is municipal and zonal
+    assert len(doc["scopes"]) == 7
+    P = doc["points"]
+    rel = np.frombuffer(__import__("base64").b64decode(P["rel"]), np.uint8).reshape(P["n"], *P["rel_shape"])
+    assert rel.shape[1:] == (len(cfg["explore"]["target_curve"]), cfg["explore"]["rain_bins"] + 1)
+    for x, need, cost, ca in zip(P["x"], P["need"], P["cost"], P["cost_actor"]):
+        used = {doc["actor_of"][i] for i, a in enumerate(x) if a > 0}
+        assert need == sum(1 << doc["actors"].index(a) for a in used)          # actors a policy needs
+        assert abs(sum(ca) - cost) < 0.5
+        assert abs(cost - FakeEvaluator().cost(x)["total"]) < 0.5             # same costs as the exploration
+    kuni = [i for i, n in enumerate(P["need"]) if n & ~1 == 0]
+    assert any(P["x"][i][0] > 0 for i in kuni) and all(P["x"][i][2] == 0 for i in kuni)   # 国: levee / retention only
+
+
+def test_rdm_on_the_surrogate(tmp_path):
+    from rri_sim.rdm import rdm_surrogate as RS
+    cfg = CF.load({"explore": {"design": {"n_train": 40, "n_none": 4, "n_val": 8, "adaptive_rounds": 0, "pool": 100},
+                               "ensemble": {"n": 64}, "optimisation": {"pop": 12, "gens": 3},
+                               "verify": {"n_policies": 2, "n_scenarios": 2}}})
+    EX.run(cfg, tmp_path / "ex", evaluator=FakeEvaluator(), log=lambda *a: None)
+    rc = CF.load({"zones": [["上流", None], ["下流", None]],
+                  "stakeholders": {"国": CF.DEFAULT["stakeholders"]["国"],
+                                   "下流自治体": CF.DEFAULT["stakeholders"]["下流自治体"]},
+                  "surrogate_rdm": {"explore_dir": str(tmp_path / "ex"), "n_scenarios": 64, "n_display": 6,
+                                    "optimisation": {"pop": 8, "gens": 2, "n_scenarios": 16},
+                                    "sobol": {"n_base": 32, "pool_per_stakeholder": 20}}})
+    res = RS.run(rc, log=lambda *a: None, out_dir=tmp_path / "rdm", evaluator=FakeEvaluator())
+    saved = json.loads((tmp_path / "rdm" / "results.json").read_text())
+    assert saved["mode"] == "surrogate" and saved["config"]["budget_oku"] is None
+    P, rob = saved["policies"], saved["robustness"]
+    assert P[0]["label"] == "施策なし" and len(P) == 6
+    for n, s in rob["stakeholders"].items():
+        R = np.array(s["regret"])
+        assert R.shape == (6, 64) and (R >= -1e-6).all()                     # regret against the best of the whole pool
+        assert s["summary"]["max"][s["minimax"]] <= min(s["summary"]["max"]) + 1e-9
+    assert rob["overall"]["minimax"] == 1
+    assert all(len(v["cells"]) > 0 for v in saved["variables"])               # map cells from the evaluator
+    a = saved["archive"][P[0]["archive"]]
+    assert a["cost"] == 0 and abs(a["damage"] - 700) < 70                      # no measures, nominal scenario ~ RRI reference
+    assert set(saved["sobol"]) == {"被害額（総合推奨案）", "Regret・国（国の推奨案）", "Regret・下流自治体（下流自治体の推奨案）"}

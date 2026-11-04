@@ -57,6 +57,99 @@ DEFAULT = {
     "regret_threshold": 0.05,
     "weight_samples": 2000,
     "stakeholder_atp_ratio": {"国": 1.2, "上流自治体": 1.1, "下流自治体": 1.0, "住民": 1.0},
+    # ---- Robust DAPP (robust.py, docs/11 11.9): pathways network on the exploration surrogate, observation-based triggers
+    "robust": {
+        "name": "abukuma_dapp_robust",
+        "explore_run": "abukuma_explore_v2",          # surrogate + cost table (docs/12; roadmap --prepare once)
+        # settings of the implementation model shared with docs/13 (rri_sim.roadmap.config): lead times (consensus + build /
+        # diffuse / mature, uncertain phases {nominal, low, high}), change_cost_fraction, reversible, levels.  Overrides here.
+        "model": {
+            "years": {"start": 2020, "end": 2100, "decision_step": 10, "eval_step": 5},
+            "budget": {"total_oku": 2000.0, "per_decade_oku": 500.0, "status": "仮定",
+                       "basis": "初期費用（割引前）の総額と10年ごとの上限（docs/11 と同じ）。超過分は次の意思決定へ繰り越す"},
+            "measures": {"forest": {"reconvert": {"allowed": True, "max_age_years": 10, "cost_fraction": 0.5, "status": "仮定",
+                                                  "basis": "植栽後10年以内なら伐採して農地に戻せる（植栽費の半分を要する）。以後は森林として固定（保安林等）"}}},
+            # the social process of docs/13 is not modelled here: no consensus failures, full adoption, no coordination cost
+            "participation": {"fail_scale": {"nominal": 0.0, "low": 0.0, "high": 0.0},
+                              "coord_cost_scale": {"nominal": 0.0, "low": 0.0, "high": 0.0}, "consensus_cost_oku_yr": 0.0,
+                              "adoption": {k: [1.0, 1.0] for k in ("paddy_dam", "forest", "raise", "relocate", "storage_private",
+                                                                  "floodproof", "evacuation")}},
+        },
+        # land use (distinct from the implementation state): which land a measure takes and whether it can return
+        "landuse": {
+            "forest_on_paddy_share": {"value": 0.5, "status": "仮定",
+                                      "basis": "森林化の候補（HAND ≥ 20 m の水田・畑）のうち水田の割合。森林化した水田では田んぼダムができない"},
+            "conversions": {
+                "forest": {"from": "農地", "to": "森林", "irreversible": "植栽後 max_age_years を過ぎると農地に戻せない"},
+                "retention": {"from": "農地", "to": "遊水地", "irreversible": "用地買収・地役権設定後は農地に戻さない（仮定）"},
+                "relocate": {"from": "住宅地", "to": "移転跡地（災害危険区域）", "irreversible": "移転跡地は再び住宅地にしない（建築制限）"},
+            },
+        },
+        # tolerated outcome (ATP): event damage / exposed population of the representative event relative to no measures,
+        # current climate; checked in every evaluated period from from_year
+        "targets": {"damage_ratio": 1.2, "pop_ratio": 1.5, "from_year": 2030, "status": "仮定",
+                    "basis": "被害額は現状（対策なし・現在気候）の 1.2 倍まで（docs/11・13 の ATP と同じ）、浸水人口は 1.5 倍まで"
+                             "（代理モデルの浸水人口は階段状で変動が大きい）。2020年代は施策の完成を待つ"},
+        # scenarios: worlds of docs/13 (world.py) varying only these groups; the others stay at their nominal values
+        "scenarios": {"n": 128, "groups": ["climate", "landuse", "effects", "delays"], "status": "仮定",
+                      "basis": "気候（降雨・海面・強雨・想定から外れる年）、社会経済（浸水域の資産・人口）、施策効果、実施期間。"
+                               "LHS の標本であり発生確率ではない"},
+        # step 1: candidate portfolios (NSGA-II on the surrogate, no weights)
+        "candidates": {"pop": 64, "gens": 30, "p_mut": 0.15, "eval_years": [2050, 2095], "n_nodes": 24, "max_nodes": 400},
+        # steps 3-4: triggers of the observation-based pathways
+        "trigger": {"ratio_of_threshold": 0.9, "use_observed": True, "use_projection": True, "horizon_years": 30, "safety": 1.0,
+                    "status": "仮定",
+                    "basis": "観測した被害の比が閾値 × ratio_of_threshold を超えるか、観測した気候の傾向から次の施策の完成時に閾値を超えると"
+                             "予測されたら移行に着手する。移行先は horizon_years 先まで目標を満たすと予測される最も安い組合せ"},
+        # pathway options: per node at most max_successors moves (non-dominated in move cost and tipping rain)
+        "network": {"max_successors": 4},
+        "initial": {"n_max": 16, "max_cost_oku": 500.0},      # initial portfolios: affordable within the first decade
+        # utility weights for Regret only (the other indicators need no weights); thresholds = targets
+        "weights": {"damage": 0.45, "cost": 0.25, "pop": 0.1, "ecology": 0.1, "livability": 0.05, "agriculture": 0.05},
+        "regret_threshold": 0.05,
+        "prim": {"alpha": 0.05, "min_mass": 0.05, "density": 0.8},
+    },
+    # ---- Multi-Actor Robust DAPP (multi.py, actors.py, docs/11 11.10): conditional strategies of single measures per actor.
+    # The model, land use, scenarios, targets of the basin, weights and PRIM come from "robust" (robust_overrides here).
+    "multi": {
+        "name": "abukuma_dapp_multi",
+        "single_name": "abukuma_dapp_single",             # --single: one basin actor with all the actors' measures
+        "robust_overrides": {"scenarios": {"n": 64}},     # evaluation scenarios (the search uses search.n_scenarios of them)
+        # actors: own measures (variables of the exploration by name), budget (initial cost, as sim.State), metric
+        # ("basin" = damage and exposed population of the basin; a zone = event damage of that zone) and target (ratio to no
+        # measures, current climate; ATP and trigger of the actor), utility weights (Regret).  Small model: 4 measures each.
+        "actors": {
+            "国": {"label": "国（河川管理者）", "measures": ["堤防・上流", "堤防・下流", "遊水地1・下流", "遊水地2・下流"],
+                  "budget": {"total_oku": 1000.0, "per_decade_oku": 400.0}, "metric": "basin",
+                  "targets": {"damage_ratio": 1.2, "pop_ratio": 1.5},
+                  "weights": {"damage": 0.45, "pop": 0.15, "cost": 0.25, "ecology": 0.1, "agriculture": 0.05}},
+            "上流自治体": {"label": "上流自治体", "measures": ["田んぼダム・上流", "森林化・上流", "住宅対策・上流", "雨水貯留（公共）・上流"],
+                      "budget": {"total_oku": 300.0, "per_decade_oku": 120.0}, "metric": "上流", "targets": {"damage_ratio": 1.2},
+                      "weights": {"damage": 0.5, "cost": 0.3, "ecology": 0.1, "agriculture": 0.1}},
+            "下流自治体": {"label": "下流自治体", "measures": ["田んぼダム・下流", "住宅対策・下流", "排水ポンプ（下水道）・下流", "雨水貯留（公共）・下流"],
+                      "budget": {"total_oku": 600.0, "per_decade_oku": 250.0}, "metric": "下流", "targets": {"damage_ratio": 1.2},
+                      "weights": {"damage": 0.55, "cost": 0.35, "ecology": 0.05, "agriculture": 0.05}},
+        },
+        "budget_status": {"status": "仮定", "basis": "主体ごとの初期費用の総額と10年ごとの上限（合計は単一主体の Robust DAPP と同程度）"},
+        # cost sharing by variable type: the payer's share comes from its own budget (Stackelberg extension: the leader's variable)
+        "subsidy": {"relocate": {"payer": "国", "share": 0.5, "status": "仮定",
+                                 "basis": "住宅の嵩上げ・移転（防災集団移転促進事業など）の費用の半分を国が負担する"}},
+        # exogenous decision rules of the other actors (uncertainty of their decisions)
+        "rules": {"staged_rho": 0.9, "restrained_rho": 1.3, "status": "仮定",
+                  "basis": "積極投資: 全施策を最初に着手（予算超過分は繰越）。段階投資: 費用対効果の順に、観測・予測が 0.9 × 目標を超えるたび1つ。"
+                           "投資抑制: 観測した被害が 1.3 × 目標を超えるまで何もしない、以後リードタイムの短い順に1つずつ"},
+        # strategy genome: up to seq_len actions in each of the lists A / B, grids of rho and of the switch (projected 2100 rain)
+        # switch_from_year: the trend of the observed rain says little about 2100 before then (correlation with the true 2100
+        # rain 0.0 in 2030-2040, 0.3 in 2050, 0.6 in 2060, 0.9 in 2080 over the scenarios; results.json signal_quality)
+        "strategy": {"seq_len": 4, "rho_grid": [0.7, 0.8, 0.9, 1.0, 1.1], "switch_grid": [1.08, 1.12, 1.16, 1.20, 1.24],
+                     "switch_from_year": 2050},
+        # NSGA-II (explore.nsga_mixed): per actor pop x gens strategies, basin basin_pop x basin_gens joint strategies
+        "search": {"n_scenarios": 27, "pop": 24, "gens": 10, "p_mut": 0.2, "basin_pop": 32, "basin_gens": 12},
+        "choose": {"coverage_tolerance": 0.03},          # recommended = cheapest within this of the highest coverage
+        "options_year": 2060,                            # future options / lock-in counted at this decision year
+        "dependence_scenarios": 16,
+        "network": {"max_states_per_year": 6},
+    },
 }
 
 
@@ -72,6 +165,8 @@ def load(path_or_dict=None) -> dict:
     cfg = _merge(cfg, {k: v for k, v in over.items() if k not in ("strategies",)})
     if "strategies" in over:                  # replace, not merge: strategies are a user choice
         cfg["strategies"] = copy.deepcopy(over["strategies"])
+    if "actors" in over.get("multi", {}):     # the actors of the Multi-Actor DAPP too
+        cfg["multi"]["actors"] = copy.deepcopy(over["multi"]["actors"])
     return cfg
 
 
@@ -80,3 +175,8 @@ def save(cfg, path):
 
 
 QUICK = {"name": "abukuma_dapp_quick"}
+QUICK_ROBUST = {"robust": {"name": "abukuma_dapp_robust_quick", "scenarios": {"n": 32},
+                           "candidates": {"pop": 32, "gens": 10, "n_nodes": 12, "max_nodes": 120}, "initial": {"n_max": 8}}}
+QUICK_MULTI = {"multi": {"name": "abukuma_dapp_multi_quick", "single_name": "abukuma_dapp_single_quick",
+                         "robust_overrides": {"scenarios": {"n": 16}}, "dependence_scenarios": 8,
+                         "search": {"n_scenarios": 9, "pop": 10, "gens": 3, "basin_pop": 12, "basin_gens": 3}}}

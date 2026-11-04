@@ -200,13 +200,15 @@ def boundary_conditions(basin_key, domain, meta, t0, t_end):
     return dams, stage_bc, info
 
 
-def drainage_arrays(basin_key, domain, meta, landclass=None):
+def drainage_arrays(basin_key, domain, meta, landclass=None, force=False):
     """Lowland drainage (pumps / sewers / creeks) for a registered basin:
     (rate [m/s] per cell, target river index per cell) or None.
-    Applies to cells with HAND <= hand_max_m; urban and farmland rates differ."""
+    Applies to cells with HAND <= hand_max_m; urban and farmland rates differ.
+    force=True: zero rates (with the drain targets) where the basin has no drainage spec."""
     spec = BASINS[basin_key].get("lowland_drainage")
-    if not spec:
+    if not spec and not force:
         return None
+    spec = spec or {"urban_mmh": 0.0, "agri_mmh": 0.0}
     from .hydro import drain_target
     d = domain
     r = d.river

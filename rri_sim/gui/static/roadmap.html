@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>適応ロードマップ</title>
+<link rel="stylesheet" href="/static/rdm.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  .pol { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+  .form-grid fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .form-grid legend { font-weight: 600; font-size: 12.5px; }
+  .frow { display: grid; grid-template-columns: 1fr 60px 60px 60px; gap: 4px; align-items: center; font-size: 12px; margin: 2px 0; }
+  .frow input, .frow select { width: 100%; font: inherit; padding: 1px 3px; }
+  .frow.h { color: var(--muted); font-size: 11px; }
+  .slider { display: grid; grid-template-columns: 1fr 120px 52px; gap: 6px; align-items: center; font-size: 12px; margin: 2px 0; }
+  .reasons li { margin: 2px 0; font-size: 12.5px; }
+  .layer { border-left: 4px solid var(--accent); padding: 2px 8px; margin: 4px 0; font-size: 12.5px; }
+  .layer.soc { border-color: #f59e0b; }
+  button.go { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  button.go:disabled { opacity: 0.5; }
+  .heat td { min-width: 52px; }
+</style>
+</head>
+<body>
+<header>
+  <b>🗺️ 適応ロードマップ — 説明可能性と更新可能性（P0〜P3）</b>
+  <select id="run"></select>
+  世界 <select id="world"></select>
+  <span id="meta" class="hint"></span>
+  <span class="links"><a href="/">詳細画面</a> · <a href="/rdm">RDM</a> · <a href="/dapp">DAPP</a> · <a href="/explore">探索</a></span>
+</header>
+<main>
+  <section class="card wide" id="summary"></section>
+  <section class="card wide"><h2>評価指標の比較（全世界）</h2><table id="kpi" class="tbl"></table>
+    <div class="hint">Regret＝その世界の最良（P0〜P3・完全情報の最適ロードマップ）との効用の差（実際に成り立つ評価基準で評価）。達成率＝Regret ≤ 閾値 かつ 許容比を一度も超えない世界の割合。
+      検知遅れ＝真の変化から再計画までの年数（検知した場合）。追加費用＝P1 との事業費（PV）の差。更新後 Regret＝最初の真の変化以後の期間の Regret。
+      FOC＝将来の目標（許容比・Ecology・農地）のうち、その時点の状態から到達できる目標の割合。Lock-in＝白紙の状態からは到達できるのに到達できなくなった目標の割合。</div></section>
+  <section class="card"><h2>Robustness / Regret</h2><canvas id="c-regret" height="230"></canvas></section>
+  <section class="card"><h2>Future Option Coverage と Lock-in</h2><canvas id="c-foc" height="230"></canvas></section>
+  <section class="card"><h2>Updateability（真の変化 → 再計画までの年数）</h2><canvas id="c-update" height="230"></canvas>
+    <div class="hint">棒＝検知遅れ（検知した変化の平均）、数字＝検知率。P0・P1 は仮定・基準を更新しない。</div></section>
+  <section class="card"><h2>Explainability: 重要な仮定 <select id="sob-t"></select></h2><canvas id="c-sobol" height="230"></canvas>
+    <div class="hint">世界の因子 → 指標の GP 代理モデル上の Sobol 全効果指数 S<sub>T</sub>（色＝因子の群）。重要な仮定の数＝S<sub>T</sub> の 80% を説明する因子数。</div></section>
+
+  <section class="card wide"><h2>適応経路図（選んだ世界） <span class="hint">行＝施策、線＝方策、○着手 │完成 ✕合意失敗 ⟳再計画 ▼トリガー ◆許容比の超過（ATP）</span></h2>
+    <canvas id="pmap" height="380" style="width:100%"></canvas><div id="pmap-legend" class="legend"></div></section>
+  <section class="card wide"><h2>施策の効果発現タイムライン <select id="tl-pol"></select></h2><canvas id="timeline" height="260" style="width:100%"></canvas>
+    <div class="hint">灰＝合意形成、薄色＝施工・植栽、斜め＝普及（実施率が上限まで増加）、緑の濃淡＝森林の成熟、濃色＝効果あり、✕＝合意の失敗。
+      ラベルの％は参加で決まる実施率の上限。</div></section>
+  <section class="card"><h2>ステークホルダーの参加状況 <select id="pp-pol"></select></h2><canvas id="c-eng" height="240"></canvas><div id="eng-note" class="hint"></div></section>
+  <section class="card"><h2>指標の時系列 <select id="ts-m"></select></h2><canvas id="c-series" height="240"></canvas></section>
+  <section class="card wide"><h2>ロードマップの更新理由（選んだ世界）</h2><div id="reasons"></div></section>
+
+  <section class="card wide"><h2>推奨が切り替わる条件（PRIM）と、Regret が大きくなる条件</h2><div id="switch"></div>
+    <div class="hint">箱＝その条件の組で「後の方策の方が効用が高い」（または Regret &gt; 閾値）世界の割合（密度）が高い範囲。被覆率＝その事象のうち箱に入る割合。
+      部分依存＝GP 代理モデルで他の因子を平均したときの効用差。0 を横切る値が切替点。</div></section>
+  <section class="card"><h2>部分依存と切替点 <select id="pd-pair"></select></h2><canvas id="c-pd" height="240"></canvas></section>
+  <section class="card"><h2>Morris 法（効用への影響）<select id="mo-t"></select></h2><canvas id="c-morris" height="240"></canvas></section>
+
+  <section class="card"><h2>時間遅れと早期意思決定の価値</h2><canvas id="c-delay" height="240"></canvas>
+    <div class="hint">全施策の段階の期間 × 倍率。早期意思決定の価値＝U（2020年に着手）− U（指定年まで何もしない）。線＝計画の価値に占める割合。</div></section>
+  <section class="card"><h2>延期による許容比超過の増加 [年]</h2><canvas id="c-delay2" height="240"></canvas></section>
+  <section class="card"><h2>施策ポートフォリオの相互補完性（Shapley 値）<select id="sh-m"></select></h2><canvas id="c-shap" height="240"></canvas>
+    <div class="hint">施策群（全地域・2020年に決定・予算制約なし）のすべての組合せから求めた厳密な Shapley 値。</div></section>
+  <section class="card"><h2>Shapley 相互作用指数 <span class="hint">（＋＝相互補完、−＝代替）</span></h2><table id="t-int" class="tbl heat"></table></section>
+  <section class="card wide"><h2>実施主体の範囲による比較（国のみ／＋自治体／＋住民・農家・民間） <select id="sc-pol"></select></h2>
+    <table id="t-scope" class="tbl"></table><div id="scope-plans" class="hint"></div>
+    <div class="hint">その範囲の主体が実施できる施策だけで初期ロードマップを最適化し（再計画も同じ範囲）、同じ世界・同じ予算で評価。
+      Regret は全範囲・全方策の中の最良との差。施策の区分は流域治水施策集の実施主体による（docs/13 13.10）。</div></section>
+  <section class="card"><h2>実施主体の範囲別の効用と Regret</h2><canvas id="c-scope" height="240"></canvas></section>
+  <section class="card"><h2>実施主体の範囲別の事業費の内訳（億円, 初期）</h2><canvas id="c-scope2" height="240"></canvas></section>
+  <section class="card wide"><h2>ステークホルダーの参加形態と将来の適応可能性</h2><table id="t-part" class="tbl"></table>
+    <div class="hint">同じ初期ロードマップで参加形態だけを変えた比較。Regret は全変種・全方策の中の最良との差。FOC は 2040 年の状態から到達できる目標の割合。</div></section>
+  <section class="card"><h2>参加形態別の Regret <select id="pt-pol"></select></h2><canvas id="c-part" height="240"></canvas></section>
+  <section class="card"><h2>参加形態別の FOC・合意失敗</h2><canvas id="c-part2" height="240"></canvas></section>
+
+  <section class="card wide sa-head"><h2>条件を変えて1つの世界で実行（代理モデル）</h2>
+    <div class="hint">時間遅れ・参加形態・社会の不確実性・世界の因子を変え、初期ロードマップの最適化と P0〜P3 の実行をやり直す（数秒）。結果は上の「世界」に「対話実行」として表示。</div></section>
+  <section class="card wide"><div class="form-grid" id="form"></div>
+    <p><button class="go" id="go">▶ この条件で実行</button> <span id="go-msg" class="hint"></span></p></section>
+</main>
+<script type="module" src="/static/roadmap.js"></script>
+</body>
+</html>

@@ -166,3 +166,22 @@ def test_estimate_costs_each_edit_without_simulating(session):
     assert len(per) == 3 and per[0] > 0 and per[1] > 0 and per[2] == 0
     assert np.isclose(sum(per), est["cost"]["pv_yen"])
     assert np.allclose(s.d.river.embankment, emb0)       # the session's basin is untouched
+
+
+def test_inland_flood_measures_drainage_storage_and_dam_prerelease(session):
+    """排水ポンプ（低地の市街地のみ）・雨水貯留浸透（市街地のみ）・事前放流（ダム容量）and their costs."""
+    from rri_sim import costs as C
+    s = session
+    cn = s.class_names
+    allc = list(range(s.d.shape[0] * s.d.shape[1]))
+    urban_low = (s.d.landclass == cn.index("urban")) & (s.hand <= 5.0) & s.d.mask
+    d, *_, applied, _ = s.apply_edits([{"type": "pump", "cells": allc, "target": "urban", "mmh": 20.0}], {})
+    assert (d.drain_add[urban_low] > 0).all() and (d.drain_add[~urban_low] == 0).all()
+    assert np.isclose(applied[0]["q"]["capacity_m3s"], urban_low.sum() * s.d.cell_area * 20 / 1000 / 3600)
+    d, *_, applied2, _ = s.apply_edits([{"type": "storage", "cells": allc, "depth_mm": 30.0, "kind": "private"}], {})
+    urban = (s.d.landclass == cn.index("urban")) & s.d.mask
+    assert np.allclose(d.store_add[urban], 0.03) and (d.store_add[~urban] == 0).all() and (d.store_leak[urban] > 0).all()
+    d, *_, applied3, _ = s.apply_edits([{"type": "prerelease", "fraction": 0.5}], {})
+    assert d.dam_factor == 1.5
+    c = C.estimate([{"type": a["type"], "q": a["q"]} for a in applied + applied2])
+    assert c["items"][0]["initial_yen"] > 0 and c["items"][1]["initial_yen"] > 0 and c["items"][0]["annual_yen"] > 0

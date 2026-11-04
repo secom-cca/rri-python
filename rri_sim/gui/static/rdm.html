@@ -12,7 +12,7 @@
   <b>🧭 Robust Decision Making — 流域治水施策の頑健性分析</b>
   <select id="run"></select>
   <span id="meta" class="hint"></span>
-  <span class="links"><a href="/">詳細画面</a> · <a href="/play">ゲーム</a> · <a href="/dapp">DAPP</a> · <a href="/explore">探索（重みなし）</a></span>
+  <span class="links"><a href="/">詳細画面</a> · <a href="/play">ゲーム</a> · <a href="/dapp">DAPP</a> · <a href="/explore">探索（重みなし）</a> · <a href="/roadmap">ロードマップ</a></span>
 </header>
 <main>
   <section class="card wide" id="summary"></section>
@@ -22,7 +22,7 @@
     <div class="ctl">色: <select id="pf-color"><option value="ecology">Ecology</option><option value="livability">Livability</option><option value="households">床上浸水世帯</option></select>
       強調: <select id="pf-st"><option value="">全体の Pareto</option></select></div>
     <canvas id="pareto" height="260"></canvas>
-    <div class="hint">灰色＝予算内の評価済み案、●＝Pareto 最適解、◆＝頑健性評価の対象案。点をクリックで右の配置図に表示。</div>
+    <div class="hint">灰色＝評価済み案（RRI 版は予算内のみ、代理モデル版は一部を表示）、●＝Pareto 最適解、◆＝頑健性評価の対象案。点をクリックで右の配置図に表示。</div>
   </section>
 
   <section class="card">
@@ -41,7 +41,7 @@
   <section class="card">
     <h2>Regret 分布 <select id="rg-st"></select></h2>
     <canvas id="regret" height="260"></canvas>
-    <div class="hint">各点＝1シナリオ（色＝気候）。横線＝許容閾値。▲最大・■平均。予算超過のシナリオは×。</div>
+    <div class="hint">各点＝1シナリオ（色＝気候。代理モデル版は降雨倍率の区分）。横線＝許容閾値。▲最大・■平均。予算超過のシナリオは×（代理モデル版は予算制約なし）。</div>
   </section>
 
   <section class="card wide">
