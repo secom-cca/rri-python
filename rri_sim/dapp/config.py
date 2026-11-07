@@ -113,24 +113,31 @@ DEFAULT = {
     # The model, land use, scenarios, targets of the basin, weights and PRIM come from "robust" (robust_overrides here).
     "multi": {
         "name": "abukuma_dapp_multi",
-        "single_name": "abukuma_dapp_single",             # --single: one basin actor with all the actors' measures
+        # Single: one decision maker for all the measures with the summed per-decade capacity (one pooled budget, no subsidy
+        # routing).  It keeps the actors' measure groups as sub-strategies (own lists, switch and trigger on the group's
+        # metric) and the Joint objectives, so that every Joint strategy is also a Single strategy: the difference between
+        # the cases is the pooling of authority and capacity only
+        "single": {"label": "流域（単一主体）"},
         "robust_overrides": {"scenarios": {"n": 64}},     # evaluation scenarios (the search uses search.n_scenarios of them)
         # actors: own measures (variables of the exploration by name), budget (initial cost, as sim.State), metric
         # ("basin" = damage and exposed population of the basin; a zone = event damage of that zone) and target (ratio to no
         # measures, current climate; ATP and trigger of the actor), utility weights (Regret).  Small model: 4 measures each.
         "actors": {
             "国": {"label": "国（河川管理者）", "measures": ["堤防・上流", "堤防・下流", "遊水地1・下流", "遊水地2・下流"],
-                  "budget": {"total_oku": 1000.0, "per_decade_oku": 400.0}, "metric": "basin",
+                  "budget": {"total_oku": None, "per_decade_oku": 400.0}, "metric": "basin",
                   "targets": {"damage_ratio": 1.2, "pop_ratio": 1.5},
                   "weights": {"damage": 0.45, "pop": 0.15, "cost": 0.25, "ecology": 0.1, "agriculture": 0.05}},
             "上流自治体": {"label": "上流自治体", "measures": ["田んぼダム・上流", "森林化・上流", "住宅対策・上流", "雨水貯留（公共）・上流"],
-                      "budget": {"total_oku": 300.0, "per_decade_oku": 120.0}, "metric": "上流", "targets": {"damage_ratio": 1.2},
+                      "budget": {"total_oku": None, "per_decade_oku": 120.0}, "metric": "上流", "targets": {"damage_ratio": 1.2},
                       "weights": {"damage": 0.5, "cost": 0.3, "ecology": 0.1, "agriculture": 0.1}},
             "下流自治体": {"label": "下流自治体", "measures": ["田んぼダム・下流", "住宅対策・下流", "排水ポンプ（下水道）・下流", "雨水貯留（公共）・下流"],
-                      "budget": {"total_oku": 600.0, "per_decade_oku": 250.0}, "metric": "下流", "targets": {"damage_ratio": 1.2},
+                      "budget": {"total_oku": None, "per_decade_oku": 250.0}, "metric": "下流", "targets": {"damage_ratio": 1.2},
                       "weights": {"damage": 0.55, "cost": 0.35, "ecology": 0.05, "agriculture": 0.05}},
         },
-        "budget_status": {"status": "仮定", "basis": "主体ごとの初期費用の総額と10年ごとの上限（合計は単一主体の Robust DAPP と同程度）"},
+        # budget: per_decade_oku = the actor's fiscal / implementation capacity in each decade (initial cost committed in the
+        # decision year; the binding constraint, excess waits for the next decade).  total_oku = an optional limit on the total
+        # over 2020-2100 (None = none; kept non-binding in the base case so that the cases differ in capacity, not in totals)
+        "budget_status": {"status": "仮定", "basis": "10年ごとの財政・実施容量（国 400・上流 120・下流 250 億円; 単一主体は合計 770 億円）。総額の上限は置かない"},
         # cost sharing by variable type: the payer's share comes from its own budget (Stackelberg extension: the leader's variable)
         "subsidy": {"relocate": {"payer": "国", "share": 0.5, "status": "仮定",
                                  "basis": "住宅の嵩上げ・移転（防災集団移転促進事業など）の費用の半分を国が負担する"}},
@@ -144,11 +151,46 @@ DEFAULT = {
         "strategy": {"seq_len": 4, "rho_grid": [0.7, 0.8, 0.9, 1.0, 1.1], "switch_grid": [1.08, 1.12, 1.16, 1.20, 1.24],
                      "switch_from_year": 2050},
         # NSGA-II (explore.nsga_mixed): per actor pop x gens strategies, basin basin_pop x basin_gens joint strategies
-        "search": {"n_scenarios": 27, "pop": 24, "gens": 10, "p_mut": 0.2, "basin_pop": 32, "basin_gens": 12},
+        "search": {"n_scenarios": 48, "pop": 24, "gens": 10, "p_mut": 0.2, "basin_pop": 32, "basin_gens": 12},
         "choose": {"coverage_tolerance": 0.03},          # recommended = cheapest within this of the highest coverage
         "options_year": 2060,                            # future options / lock-in counted at this decision year
         "dependence_scenarios": 16,
         "network": {"max_states_per_year": 6},
+        # GUI recalculation (POST /api/dapp/multi/recalculate): computing sizes merged over this block; "full" = as above
+        "gui": {"sizes": {
+            "fast": {"robust_overrides": {"scenarios": {"n": 32}}, "dependence_scenarios": 8,
+                     "search": {"n_scenarios": 16, "pop": 12, "gens": 4, "basin_pop": 16, "basin_gens": 4}},
+            "standard": {"robust_overrides": {"scenarios": {"n": 64}},
+                         "search": {"n_scenarios": 32, "pop": 16, "gens": 6, "basin_pop": 24, "basin_gens": 8}},
+            "full": {}}},
+    },
+    # ---- Adaptive DAPP (adaptive.py, docs/11 11.11): state-dependent decision rules over single-measure actions, searched
+    # per initial action of a Robust DAPP run (its settings, scenarios and initial actions; compared with its pathways)
+    "adaptive": {
+        "name": "abukuma_dapp_adaptive",
+        "robust_run": "abukuma_dapp_robust",          # 11.9 run: settings, evaluation scenarios, initial actions, comparison
+        "inits": "all",                                 # "all" initial actions of that run or "promising"
+        # policy genome (grids): which indicators are monitored, when to act, how the next action is chosen
+        "policy": {
+            "rho_grid": [0.7, 0.8, 0.9, 1.0, 1.1],      # act when the observed / projected ratio / target exceeds rho
+            "rain_grid": [1.08, 1.12, 1.16, 1.20, 1.24],  # act when the projected 2100 rain (observed trend) reaches it (from rain_from_year)
+            "rain_from_year": 2050,                     # the rain trend says little before (docs/11 11.10.1)
+            "weight_grid": [0.0, 0.5, 1.0, 2.0],        # cost / irreversibility / lead-time weights of the action score
+            "horizon_grid": [10, 20, 30],               # projected benefit of an action this many years after its completion
+            "k_grid": [1, 2],                           # actions per decision
+            "scale_back_grid": [0.0, 0.5, 0.7],         # scale back a reversible measure when observed and projected < this (0 = never)
+            "min_benefit": 0.005,                       # an action must lower the projected ratio / target by at least this
+            "cost_ref_oku": 100.0, "irr_penalty": 0.05, "lead_penalty": 0.05, "lead_ref_years": 20.0,
+            "status": "仮定",
+            "basis": "行動の得点＝予測した効果 ÷ (1 + w_cost × 初期費用 / 100億円) − w_irr × 0.05 × 不可逆 − w_lead × 0.05 × リードタイム/20年"},
+        "search": {"n_scenarios": 24, "pop": 16, "gens": 6, "p_mut": 0.2},
+        "choose": {"coverage_tolerance": 0.03},
+        # sensitivity (GUI / config): targets {damage_ratio, pop_ratio, from_year}, noise_damage / noise_climate (x the observation
+        # noise of docs/13 monitoring), trend_window (observations in a trend), forecast_noise (relative error of the projected
+        # rain increase; adaptive projections only).  Empty = the 11.9 run's values
+        "sensitivity": {},
+        "gui": {"sizes": {"fast": {"search": {"n_scenarios": 12, "pop": 10, "gens": 3}},
+                          "standard": {"search": {"n_scenarios": 24, "pop": 16, "gens": 6}}}},
     },
 }
 
@@ -177,6 +219,8 @@ def save(cfg, path):
 QUICK = {"name": "abukuma_dapp_quick"}
 QUICK_ROBUST = {"robust": {"name": "abukuma_dapp_robust_quick", "scenarios": {"n": 32},
                            "candidates": {"pop": 32, "gens": 10, "n_nodes": 12, "max_nodes": 120}, "initial": {"n_max": 8}}}
-QUICK_MULTI = {"multi": {"name": "abukuma_dapp_multi_quick", "single_name": "abukuma_dapp_single_quick",
+QUICK_MULTI = {"multi": {"name": "abukuma_dapp_multi_quick",
                          "robust_overrides": {"scenarios": {"n": 16}}, "dependence_scenarios": 8,
                          "search": {"n_scenarios": 9, "pop": 10, "gens": 3, "basin_pop": 12, "basin_gens": 3}}}
+QUICK_ADAPTIVE = {"adaptive": {"name": "abukuma_dapp_adaptive_quick", "inits": "promising", "n_eval": 32,
+                               "search": {"n_scenarios": 8, "pop": 8, "gens": 2}}}

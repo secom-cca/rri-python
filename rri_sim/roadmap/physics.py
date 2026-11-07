@@ -38,6 +38,18 @@ ENV_CLIMATE = ("rain_factor", "sea_level_rise_m", "rain_gamma")
 EFFECT_OF = {"levee": "levee_effect", "retention": "retention_effect", "paddy_dam": "paddy_effect",
              "forest": "forest_effect", "raise": "raise_effect"}
 OUT_KEYS = ("damage", "pop_hazard", "households", "livability", "ecology")
+# variable types the roadmap / DAPP models handle (housing as one variable none / raise / relocate)
+SUPPORTED_TYPES = ("levee", "retention", "paddy_dam", "forest", "relocate", "pump_urban", "pump_agri",
+                   "storage_public", "storage_private")
+
+
+def check_supported(res):
+    bad = [v["name"] for v in res["variables"]
+           if v["type"] not in SUPPORTED_TYPES or (v["type"] == "relocate" and len(v["options"]) != 3)]
+    if bad:
+        raise ValueError(f"exploration {res['name']}: variables {bad} are not supported by the roadmap / DAPP models "
+                         "(森林整備, 嵩上げ・移転の別変数).  Run the exploration for them with "
+                         '{"candidates": {"housing": "combined", "forest_mgmt": null}}')
 
 
 def layout_of(variables):
@@ -121,6 +133,7 @@ class SurrogatePhysics(Physics):
         if not src.exists():
             raise FileNotFoundError(f"{src}: run scripts/run_explore.py first (docs/12)")
         res = json.loads(src.read_text(encoding="utf-8"))
+        check_supported(res)
         self.explore_name = explore_name
         self.cfg_explore = res["config"]
         self.dir = Path(cache_dir) if cache_dir else PHYS_DIR / explore_name
@@ -220,6 +233,7 @@ def prepare(explore_name="abukuma_explore", log=print, grid=11):
     using the RRI session for the measure quantities (no flood runs beyond the baseline)."""
     from ..rdm.run import setup_rri
     res = json.loads((PROCESSED / "explore" / explore_name / "results.json").read_text(encoding="utf-8"))
+    check_supported(res)
     cfg = res["config"]
     out = PHYS_DIR / explore_name
     out.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,12 @@ const charts = {};
 function chart(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart($(id), cfg); return charts[id]; }
 const rec = (s, c) => D.records[`${s}|${c}`];
 
+window.dappReload = async (name) => {          // after a recalculation (dapp_multi.js): refresh the run list and show `name`
+  const runs = await (await fetch('/api/dapp')).json();
+  $('run').innerHTML = runs.map((r) => `<option>${r.name}</option>`).join('');
+  $('run').value = name;
+  await load(name);
+};
 async function init() {
   const runs = await (await fetch('/api/dapp')).json();
   if (!runs.length) { $('summary').innerHTML = '<p>DAPP の結果がありません。<code>python scripts/run_dapp.py --quick</code> を実行してください（docs/11_dapp.md）。</p>'; return; }
@@ -18,7 +24,10 @@ async function init() {
 }
 async function load(name) {
   D = await (await fetch(`/api/dapp/${encodeURIComponent(name)}`)).json();
-  const robust = D.mode === 'robust', multi = D.mode === 'multi';
+  const robust = D.mode === 'robust', multi = D.mode === 'multi', adaptive = D.mode === 'adaptive';
+  $('adaptive').hidden = false; $('adaptive').style.display = adaptive ? '' : 'none';
+  if (adaptive) { $('classic').style.display = 'none'; $('robust').style.display = 'none'; $('multi').style.display = 'none'; $('clim-box').style.display = 'none';
+    (await import('/static/dapp_adaptive.js')).render(D, name); return; }
   $('classic').style.display = robust || multi ? 'none' : '';
   $('robust').hidden = false; $('robust').style.display = robust ? '' : 'none';
   $('multi').hidden = false; $('multi').style.display = multi ? '' : 'none';

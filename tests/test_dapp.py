@@ -222,7 +222,7 @@ def test_state_charges_each_payer_within_its_own_budget():
     assert st.spent_by["国"] == 510.0 and not st.queue
     st.request(pump, 1); st.process(2040); st.process(2050)         # 60 + 80 > the downstream total of 100: waits for good
     assert [q[0] for q in st.queue] == [pump] and st.spent_by["下流自治体"] == 60.0
-    C = (st.capital_var + st.maint_var) @ ctx.P.T                  # cost by payer adds up to the total
+    C = (st.capital_var + st.maint_var) @ ctx.Pc.T                 # cost by actor (with subsidies) adds up to the total
     assert np.isclose(C.sum(), (st.capital + st.maint).sum())
 
 
@@ -257,41 +257,301 @@ def test_strategy_codec_rules_and_conditional_controller():
     assert 0 <= opt["mid"][up.name]["lockin"] <= 1 and abs(sum(v for k, v in opt["end"][up.name].items() if k != "lockin") - 1) < 1e-9
 
 
+def test_per_decade_capacity_binds_and_single_sums_it():
+    from rri_sim.dapp import multi as MU
+    from rri_sim.roadmap import sim as SM
+    from rri_sim.roadmap import world as WD
+    from rri_sim.roadmap.social import Social
+    free = {n: {**a, "budget": {"total_oku": None, "per_decade_oku": a["budget"]["per_decade_oku"]}} for n, a in FAKE_ACTORS.items()}
+    ctx = multi_ctx(actors=free)
+    iv = {v["name"]: i for i, v in enumerate(ctx.T.V)}
+    w = WD.belief_world(ctx.rc)
+    st = SM.State(ctx.rc, ctx.phys, w, Social(ctx.rc, w.p["social"], {}))
+    st.budgets, st.payer = ctx.budgets, ctx.payer
+    rel, lev, pump = iv["住宅対策・下流"], iv["堤防・下流"], iv["排水ポンプ（下水道）・下流"]
+    st.request(rel, 2); st.request(lev, 2); st.process(2020)       # the levee (450) exceeds the national decade capacity after 60
+    st.process(2030)
+    st.request(pump, 1); st.process(2040)                           # no total limit: 60 + 80 > 100 does not block the pump
+    assert not st.queue and st.spent_by["下流自治体"] == 140.0
+    u = MU.budget_use(ctx, st)                                      # carry-over shows in the decade it happened
+    assert u["deferred"]["国"][:2] == [1, 0] and u["commit"]["国"][:2] == [60.0, 450.0] and u["commit"]["下流自治体"][2] == 80.0
+    # Single: one payer for all the measures with the summed per-decade capacity; the actors' groups and targets stay
+    one = multi_ctx(single=True, actors=free)
+    pool = one.pool["name"]
+    assert one.budgets == {pool: {"total_oku": None, "per_decade_oku": 400.0 + 60.0 + 100.0}}
+    assert all(one.payer(i) == {pool: 1.0} for a in one.actors for i in a.vars) and one.names == list(FAKE_ACTORS)
+    assert np.allclose(one.Pc, ctx.Pc)                              # costs still attributed to the actors (with the subsidy)
+    st = SM.State(one.rc, one.phys, w, Social(one.rc, w.p["social"], {}))
+    st.budgets, st.payer = one.budgets, one.payer
+    st.request(rel, 2); st.request(lev, 2); st.request(pump, 1); st.process(2020)   # 120 + 450 > 560: the levee waits, the pump fits
+    assert [q[0] for q in st.queue] == [lev] and MU.budget_use(one, st)["deferred"] == {pool: [1] + [0] * 7}
+    assert multi_ctx(single=True).budgets[pool]["total_oku"] == 800.0              # totals given: their sum
+
+
 def test_multi_actor_dapp_pipeline(tmp_path):
     from rri_sim.dapp import multi as MU
     from tests.test_roadmap import FakePhysics
     c = multi_cfg()
     res = MU.run(c, out_dir=tmp_path, phys=FakePhysics(), log=lambda *a: None)
     saved = json.loads((tmp_path / "results.json").read_text())
-    assert saved["mode"] == "multi" and not saved["single"]
+    assert saved["mode"] == "multi"
     names = [a["name"] for a in saved["actors"]]
     nS = len(saved["worlds"])
     comp = saved["comparison"]
-    assert {"individual", "basin"} <= set(comp) and sum(k.startswith("rules:") for k in comp) == 3 ** len(names)
+    assert {"individual", "joint", "single"} <= set(comp) and sum(k.startswith("rules:") for k in comp) == 3 ** len(names)
     for k, r in comp.items():
         assert 0 <= r["basin"]["coverage"] <= 1 and r["basin"]["max_regret"] >= -1e-9
         for n in names:
             x = r["actors"][n]
-            assert 0 <= x["coverage"] <= 1 and x["max_regret"] >= -1e-9 and 0 <= x["lockin"] <= 1
+            assert 0 <= x["coverage"] <= 1 and x["max_regret"] >= -1e-9 and (x["lockin"] is None or 0 <= x["lockin"] <= 1)
     g = saved["gap"]
-    assert np.isclose(g["basin_coverage"], comp["basin"]["basin"]["coverage"] - comp["individual"]["basin"]["coverage"])
-    for conf in ("individual", "basin"):
-        for n in names:
-            tree = saved["trees"][conf][n]
+    cov = {k: comp[k]["basin"]["coverage"] for k in ("individual", "joint", "single")}
+    assert np.isclose(g["coordination_gap"]["coverage"], cov["joint"] - cov["individual"])
+    assert np.isclose(g["institutional_fragmentation_gap"]["coverage"], cov["single"] - cov["joint"])
+    assert np.isclose(g["institutional_fragmentation_gap"]["mean_cost"], comp["single"]["basin"]["mean_cost"] - comp["joint"]["basin"]["mean_cost"])
+    for k, (a_, b_) in (("coordination_gap", ("individual", "joint")), ("institutional_fragmentation_gap", ("joint", "single"))):
+        lo, hi = g[k]["coverage_ci90"]
+        assert lo <= g[k]["coverage"] + 1e-9 and g[k]["coverage"] <= hi + 1e-9
+        assert np.isclose(g[k]["scenarios_gained"] - g[k]["scenarios_lost"], round(g[k]["coverage"] * nS))
+    fr = saved["frontier"]
+    for k in ("joint", "single"):
+        assert sum(r["chosen"] for r in fr[k]) == 1
+        ch = next(r for r in fr[k] if r["chosen"])
+        assert np.isclose(ch["coverage"], cov[k]) and np.isclose(ch["mean_cost"], comp[k]["basin"]["mean_cost"])
+    assert max(cov.values()) <= fr["any_case_coverage"] + 1e-9
+    sa = saved["single_actor"]
+    assert sa["budget"]["per_decade_oku"] == sum(a["budget"]["per_decade_oku"] for a in saved["actors"])
+    assert list(comp["single"]["strategies"]) == names and set(saved["budget"]["single"]) == {sa["name"]}
+    assert set(saved["budget"]["individual"]) == set(names)
+    assert len(sa["catalog"]) == sum(len(a["catalog"]) for a in saved["actors"])
+    for k in ("individual", "joint", "single"):
+        for b in saved["budget"][k].values():
+            assert len(b["mean"]) == len(saved["years"]) and all(0 <= x <= 1 for x in b["deferred_share"])
+        for n in names + ([sa["name"]] if k == "single" else []):
+            tree = saved["trees"][k][n]
             assert tree[0]["n"] == nS and sum(b["end"] for b in tree) == nS
-            assert np.isclose(sum(b["end_met"] for b in tree) / nS, comp[conf]["actors"][n]["coverage"])
+            target = comp[k]["basin"]["coverage"] if n == sa["name"] else comp[k]["actors"][n]["coverage"]
+            assert np.isclose(sum(b["end_met"] for b in tree) / nS, target)
             assert all(set(b["reasons"]) <= {"observed", "projected", "switch"} for b in tree[1:])
-        net = saved["networks"][conf]
+        net = saved["networks"][k]
         for y in net["years"]:
             assert sum(nd["n"] for nd in net["nodes"] if nd["year"] == y) == nS
         assert all(e["changes"] is not None for e in net["edges"])
-    assert set(saved["unmet"]["individual"]) == {"all", *names}
+        assert set(saved["unmet"][k]) == {"all", *names}
     assert all(len(saved["dependence"][n]) == 3 ** (len(names) - 1) + 1 for n in names)
     assert set(saved["spillover"]["portfolios"]) == {"施策なし", "全主体", *names}
     assert [q["year"] for q in saved["signal_quality"]] == saved["years"][1:]
+    assert {"joint", "single", *names} <= set(saved["search"])
     res2 = MU.run(c, out_dir=tmp_path / "again", phys=FakePhysics(), log=lambda *a: None)
     assert res2["comparison"] == res["comparison"]
-    # one basin actor with all the measures (the single-actor Robust DAPP on single measures)
-    one = MU.run(c, single=True, out_dir=tmp_path / "single", phys=FakePhysics(), log=lambda *a: None)
-    assert [a["name"] for a in one["actors"]] == ["流域"] and len(one["actors"][0]["measures"]) == 7
-    assert one["gap"]["basin_coverage"] == 0 and sum(k.startswith("rules:") for k in one["comparison"]) == 3
+
+
+def test_gui_recalculation_settings_progress_and_summaries(tmp_path):
+    from rri_sim.dapp import multi as MU
+    from tests.test_roadmap import FakePhysics
+    c = multi_cfg(gui={"sizes": {"tiny": {"robust_overrides": {"scenarios": {"n": 6}}, "dependence_scenarios": 3,
+                                          "search": {"n_scenarios": 3, "pop": 4, "gens": 1, "basin_pop": 4, "basin_gens": 1}}}})
+    inputs = {"actors": {"国": {"per_decade_oku": 300, "targets": {"damage_ratio": 1.3, "pop_ratio": 1.8}},
+                         "上流自治体": {"per_decade_oku": 50, "weights": {"damage": 0.7, "cost": 0.3}},
+                         "下流自治体": {"targets": {"damage_ratio": 1.1}}},
+              "basin_weights": {"damage": 0.6, "cost": 0.4}}
+    g = MU.gui_config(c, inputs, "tiny")
+    MA = g["multi"]
+    assert MA["actors"]["国"]["budget"]["per_decade_oku"] == 300 and MA["actors"]["下流自治体"]["targets"]["damage_ratio"] == 1.1
+    assert MA["actors"]["上流自治体"]["weights"] == {"damage": 0.7, "cost": 0.3} and MA["search"]["n_scenarios"] == 3
+    assert MA["name"].startswith("fake_multi_gui_") and MU.gui_config(c, inputs, "tiny")["multi"]["name"] == MA["name"]
+    assert MU.gui_config(c, {"actors": {"国": {"per_decade_oku": 301}}}, "tiny")["multi"]["name"] != MA["name"]
+    old = json.loads(json.dumps(c)); del old["multi"]["gui"]                     # a run saved before the GUI sizes existed
+    assert MU.gui_config(old, {}, "fast")["multi"]["search"]["n_scenarios"] == CF.DEFAULT["multi"]["gui"]["sizes"]["fast"]["search"]["n_scenarios"]
+    for bad in ({"actors": {"上流自治体": {"targets": {"pop_ratio": 1.5}}}},          # no exposed population of a zone
+                {"actors": {"国": {"per_decade_oku": -1}}}, {"actors": {"誰か": {}}}):
+        try:
+            MU.gui_config(c, bad, "tiny")
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+    ctx = MU.setup(g, False, FakePhysics(), lambda m: None)[0]
+    assert ctx.R["targets"]["damage_ratio"] == 1.3 and ctx.R["targets"]["pop_ratio"] == 1.8    # the basin target follows 国
+    one = MU.setup(g, True, FakePhysics(), lambda m: None)[0]
+    assert one.pool["budget"]["per_decade_oku"] == 300 + 50 + 100                     # Single: the actors' sum (下流 unchanged)
+    seen = []
+    out = MU.recalculate(g, FakePhysics(), lambda f, m: seen.append(f), out_dir=tmp_path / MA["name"])
+    assert out == {"name": MA["name"]} and seen == sorted(seen) and 0 <= seen[0] and seen[-1] < 1
+    S = MU.summaries("fake_multi", tmp_path)
+    assert [x["name"] for x in S] == [MA["name"]]
+    x = S[0]
+    assert x["size"] == "tiny" and x["base"] == "fake_multi" and x["single_per_decade_oku"] == 450
+    assert x["actors"]["国"]["targets"] == {"damage_ratio": 1.3, "pop_ratio": 1.8}
+    assert np.isclose(x["gap"]["coordination_gap"]["coverage"], x["coverage"]["joint"] - x["coverage"]["individual"])
+    assert np.isclose(x["gap"]["institutional_fragmentation_gap"]["coverage"], x["coverage"]["single"] - x["coverage"]["joint"])
+
+
+# ------------------------------------------------------------------ future option space (option_space.py, Robust DAPP)
+def test_option_space_classifies_used_lost_and_conditional_options():
+    from rri_sim.dapp import option_space as OS
+    from rri_sim.dapp import robust as RB
+    from rri_sim.roadmap import sim as SM
+    from rri_sim.roadmap.social import Social
+
+    def space(**over):
+        c, rc, ph, ref, T, worlds = robust_setup(**over)
+        iv = {v["type"]: i for i, v in enumerate(ph.variables)}
+        top = [len(L) - 1 for L in T.levels]
+        one = lambda **kv: tuple(kv.get(v["type"], 0) for v in ph.variables)  # noqa: E731
+        nodes = [one(), one(relocate=1), one(relocate=2), one(paddy_dam=top[iv["paddy_dam"]]), one(forest=top[iv["forest"]]),
+                 one(levee=1), one(levee=2), one(retention=1), T.repair(one(paddy_dam=top[iv["paddy_dam"]], forest=top[iv["forest"]]))]
+        net = RB.Net(c, rc, ph, T, nodes, worlds, ref)
+        return OS.OptionSpace(net), net, iv, T
+
+    sp, net, iv, T = space()
+    lab = {l: o for o, l in enumerate(sp.labels)}
+    opt = lambda i, li: lab[f"{T.V[i]['name']} {T.label(i, li)}"]  # noqa: E731
+    assert not sp.base[opt(iv["pump_urban"], 1)]                     # in no node of the network: not an option (never "lost")
+    assert sp.base[opt(iv["paddy_dam"], 1)] and sp.base[opt(iv["paddy_dam"], 2)]      # 50 % is reached through the 100 % node
+
+    def state(*reqs):
+        st = SM.State(net.rc, net.phys, net.worlds[0], Social(net.rc, net.worlds[0].p["social"], {}))
+        st.allow_decrease = True
+        for t, i, lv in reqs:
+            st.request(i, lv); st.process(t)
+        return st
+    r = iv["relocate"]
+    s1 = sp.status(state((2020, r, 2)), 2, 2030)
+    assert s1[opt(r, 2)] == OS.USED and s1[opt(r, 1)] == OS.CODE["irreversible_land_use"]      # relocated: no raise any more
+    s2 = sp.status(state((2020, r, 1), (2030, r, 2)), 2, 2040)
+    assert s2[opt(r, 1)] == OS.USED                                                            # raised first: used, not lost
+    f, pd = iv["forest"], iv["paddy_dam"]
+    st = state((2020, f, T.levels[f][-1]))
+    young, old = st.can_decrease(f, 2030), st.can_decrease(f, 2050)
+    assert young and not old
+    assert sp.status(st, 4, 2030)[opt(pd, 2)] == OS.CONDITIONAL                               # reconvert the young forest first
+    assert sp.status(st, 4, 2050)[opt(pd, 2)] == OS.CODE["land_use_conflict"]                 # past the reconversion deadline
+    assert sp.deadline(st, T.V[f]["zone"]) is not None
+    sp_fixed, *_ = space(model={"measures": {"forest": {"reconvert": {"allowed": False}}}})
+    assert sp_fixed.status(st, 4, 2030)[opt(pd, 2)] == OS.CODE["irreversible_measure"]
+    st = state((2020, iv["retention"], 1))                                                     # retention: farmland converted,
+    s = sp.status(st, 7, 2030)                                                                 # no option of the space lost
+    land = [OS.CODE[k] for k in ("irreversible_land_use", "land_use_conflict", "irreversible_measure")]
+    assert s[opt(iv["retention"], 1)] == OS.USED and not np.isin(s, land).any()
+    assert T.landuse(net.nodes[7])[T.V[iv["retention"]]["zone"]]["遊水地"] > 0
+    assert sp.status(state(), 0, 2095)[opt(iv["levee"], 1)] == OS.CODE["lead_time"]
+    st = state(); st.spent = net.rc["budget"]["total_oku"]
+    assert sp.status(st, 0, 2030)[opt(iv["levee"], 2)] == OS.CODE["budget"]
+
+
+def test_robust_dapp_reports_future_option_space(tmp_path):
+    from rri_sim.dapp import robust as RB
+    from tests.test_roadmap import FakePhysics
+    res = RB.run(robust_cfg(), tmp_path, phys=FakePhysics(), log=lambda *a: None)
+    ev = res["evaluation"]
+    O = ev["option_space"]
+    assert O["n_base"] > 0 and O["years"] == res["years"] and set(O["reasons"]) == set(O["labels"])
+    for r in ev["table"]:
+        d = O["inits"][str(r["node"])]
+        ts = d["timeseries"]
+        assert all(0 <= x <= 1 for x in ts["remaining"]["mean"]) and len(ts["cost_cum"]) == len(O["years"])
+        tot = [ts["remaining"]["mean"][n] + ts["used"]["mean"][n] + sum(ts["loss"][q][n] for q in O["reasons"]) for n in range(len(O["years"]))]
+        assert np.allclose(tot, 1.0, atol=1e-3)                              # every base option is feasible, used or lost (rounded)
+        assert 0 <= r["remaining_options_mean"] <= 1 and 0 <= r["transition_feasibility"] <= 1
+        assert sum(b["n"] for b in d["branches"].values()) >= len(ev["scenarios"])
+    assert O["inits"]["0"]["timeseries"]["remaining"]["mean"][0] == 1.0      # nothing done in 2020: every option is open
+    for f in ("option_space.json", "scorecard.csv", "timeseries.csv", "branches.csv"):
+        assert (tmp_path / "option_space" / f).stat().st_size > 0
+
+
+# ------------------------------------------------------------------ Adaptive DAPP (adaptive.py): decision rules per initial action
+def test_adaptive_dapp_searches_rules_and_compares_with_robust(tmp_path):
+    from rri_sim.dapp import adaptive as AD
+    from rri_sim.dapp import option_space as OS
+    from rri_sim.dapp import robust as RB
+    from tests.test_roadmap import FakePhysics
+    rc_ = robust_cfg()
+    RB.run(rc_, tmp_path / "robust", phys=FakePhysics(), log=lambda *a: None)
+    c = CF._merge(rc_, {"adaptive": {"name": "fake_adaptive", "inits": "all", "n_eval": 8,
+                                     "search": {"n_scenarios": 4, "pop": 6, "gens": 1}}})
+    P = CF.load(c)["adaptive"]["policy"]
+    codec = AD.Codec(P)
+    rng = np.random.default_rng(1)
+    for _ in range(20):
+        p = codec.decode([rng.integers(0, n) for n in codec.sizes])
+        assert codec.decode(codec.encode(p)) == p and any(p.monitor)
+    res = AD.run(c, tmp_path / "ad", phys=FakePhysics(), log=lambda *a: None, robust_dir=tmp_path / "robust")
+    saved = json.loads((tmp_path / "ad" / "results.json").read_text())
+    assert saved["mode"] == "adaptive" and saved["n_eval"] == 8
+    T = saved["table"]
+    assert [r["node"] for r in T] == json.loads((tmp_path / "robust" / "results.json").read_text())["evaluation"]["inits"]
+    assert any(r.get("pareto") for r in T) and sum(bool(r.get("recommended")) for r in T) == 1
+    assert next(r for r in T if r.get("recommended")).get("pareto")
+    for r in T:
+        for m in ("adaptive", "robust"):
+            x = r[m]
+            assert 0 <= x["coverage"] <= 1 and x["max_regret"] >= -1e-9 and 0 <= x["remaining_mean"] <= 1
+            assert all(v == 0 for v in x["options"]["loss"]["transition_unavailable"])     # state-based option space
+        tree = saved["trees"][str(r["node"])]
+        assert tree[0]["n"] == 8 and sum(b["end"] for b in tree) == 8
+        assert np.isclose(sum(b["end_met"] for b in tree) / 8, r["adaptive"]["coverage"])
+        pol = r["policy"]
+        for rec in saved["records"][str(r["node"])]:                       # every decision follows the rule
+            for e in rec["events"][1:]:
+                why = e["reason"]
+                assert why in pol["monitor"] or (why == "scale_back" and pol["scale_back"] > 0)
+                if why in ("observed", "projected"):
+                    assert (e["obs_ratio"] if why == "observed" else e["projected"]) > pol["rho"]
+                    assert e["benefit"] > P["min_benefit"] and e["score"] > 0
+                if why == "rain":
+                    assert e["rain2100"] >= pol["rain"] and e["year"] >= P["rain_from_year"]
+    assert len(saved["catalog"]) > len(saved["records"]) and saved["n_base"] > 0
+    assert set(saved["reasons"]) == set(OS.REASONS)
+    res2 = AD.run(c, tmp_path / "ad2", phys=FakePhysics(), log=lambda *a: None, robust_dir=tmp_path / "robust")
+    assert [r["adaptive"]["coverage"] for r in res2["table"]] == [r["adaptive"]["coverage"] for r in res["table"]]
+
+
+def test_adaptive_dapp_sensitivity_targets_and_information_quality(tmp_path):
+    from rri_sim.dapp import adaptive as AD
+    from rri_sim.dapp import robust as RB
+    from tests.test_roadmap import FakePhysics
+    rc_ = robust_cfg()
+    RB.run(rc_, tmp_path / "robust", phys=FakePhysics(), log=lambda *a: None)
+    c = CF._merge(rc_, {"adaptive": {"name": "fake_adaptive", "inits": "promising", "n_eval": 6,
+                                     "search": {"n_scenarios": 3, "pop": 4, "gens": 1}}})
+    base = AD.run(c, tmp_path / "fake_adaptive", phys=FakePhysics(), log=lambda *a: None, robust_dir=tmp_path / "robust")
+    for bad in ({"targets": {"damage_ratio": 9}}, {"noise_damage": -1}, {"trend_window": 1}):
+        try:
+            AD.gui_config(c, bad)
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+    inp = {"targets": {"damage_ratio": 1.4, "pop_ratio": 2.0}, "noise_damage": 3.0, "noise_climate": 2.0, "trend_window": 5,
+           "rain_from_year": 2060, "forecast_noise": 0.0}
+    g = AD.gui_config(c, inp, "fixed")
+    assert g["adaptive"]["fixed_from"] == "fake_adaptive" and g["adaptive"]["name"].startswith("fake_adaptive_gui_")
+    assert AD.gui_config(c, inp, "fixed")["adaptive"]["name"] == g["adaptive"]["name"]
+    net = RB.load_net(tmp_path / "robust", FakePhysics(), log=lambda m: None)[0]
+    m0 = dict(net.rc["monitoring"])
+    sens = AD.apply_sensitivity(net, g["adaptive"])                       # reaches the 11.9 run too (both methods)
+    assert np.isclose(net.rc["monitoring"]["risk_noise"], 3 * m0["risk_noise"]) and np.isclose(net.rc["monitoring"]["rain_noise"], 2 * m0["rain_noise"])
+    assert net.R["targets"]["damage_ratio"] == 1.4 and net.rc["regimes"]["robust"]["thresholds"]["pop_ratio"] == 2.0
+    assert net.rc["detect"]["trend_window"] == 5 and sens["rain_from_year"] == 2060 and sens["mode"] == "fixed"
+    g["adaptive"]["fixed_from_dir"] = str(tmp_path / "fake_adaptive")
+    fx = AD.run(g, tmp_path / g["adaptive"]["name"], phys=FakePhysics(), log=lambda *a: None, robust_dir=tmp_path / "robust")
+    assert [r["policy"] for r in fx["table"]] == [r["policy"] for r in base["table"]]   # the same rules, re-evaluated
+    assert all(r["front"] == [] for r in fx["table"]) and fx["settings"]["targets"]["damage_ratio"] == 1.4
+    # forecast error changes only the adaptive pathways (11.9 has its own projection); 0 changes nothing
+    f0 = AD.gui_config(c, {}, "fixed"); f0["adaptive"]["fixed_from_dir"] = str(tmp_path / "fake_adaptive")
+    f1 = AD.gui_config(c, {"forecast_noise": 1.0}, "fixed"); f1["adaptive"]["fixed_from_dir"] = str(tmp_path / "fake_adaptive")
+    r0 = AD.run(f0, tmp_path / "f0", phys=FakePhysics(), log=lambda *a: None, robust_dir=tmp_path / "robust")
+    r1 = AD.run(f1, tmp_path / "f1", phys=FakePhysics(), log=lambda *a: None, robust_dir=tmp_path / "robust")
+    assert [r["adaptive"]["coverage"] for r in r0["table"]] == [r["adaptive"]["coverage"] for r in base["table"]]
+    assert [r["robust"]["coverage"] for r in r1["table"]] == [r["robust"]["coverage"] for r in r0["table"]]
+    ev0 = [e["year"] for x in r0["records"].values() for rr in x for e in rr["events"]]
+    ev1 = [e["year"] for x in r1["records"].values() for rr in x for e in rr["events"]]
+    assert ev0 != ev1 or [r["adaptive"]["mean_cost"] for r in r1["table"]] != [r["adaptive"]["mean_cost"] for r in r0["table"]]
+    seen = []
+    s2 = AD.gui_config(c, {"noise_damage": 0.0}, "search", "fast")
+    s2["adaptive"]["search"] = {"n_scenarios": 3, "pop": 4, "gens": 1, "p_mut": 0.2}
+    AD.recalculate(s2, FakePhysics(), lambda f, m: seen.append(f), out_dir=tmp_path / s2["adaptive"]["name"], robust_dir=tmp_path / "robust")
+    assert seen == sorted(seen) and seen[-1] < 1
+    S = AD.summaries("fake_adaptive", tmp_path)
+    assert {x["mode"] for x in S} == {"search", "fixed"} and all(x["n_inits"] == len(base["table"]) for x in S)
+    x = next(x for x in S if x["name"] == fx["name"])
+    assert x["sensitivity"]["noise_damage"] == 3.0 and x["sensitivity"]["targets"]["damage_ratio"] == 1.4

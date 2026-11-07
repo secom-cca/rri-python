@@ -1,9 +1,0 @@
-Multi-Actor Robust DAPP: 主体 1（流域）・シナリオ 評価 64・探索 27
-  流域: 施策 12・行動 22・予算 2000 億円・指標 basin
-1. 流域 の戦略の探索（他主体の行動は外生ルールの組合せ: 不確実性）
-  NSGA-II 世代 10/10: 評価 264 案
-   264 戦略・推奨: カバー率 59%・費用 506 億円
-3. 評価（全シナリオ）: 個別最適の組合せ・流域全体の最適・外生ルールの組合せ
-   全主体の目標: 個別最適 69% / 流域最適 69%（Robustness Gap +0%）
-4. 他主体の行動への依存（各主体の推奨戦略 × 他主体のルールの組合せ）
-完了: /Users/nakashima/rri-python/data/processed/dapp/abukuma_dapp_single/results.json（46 s）

@@ -25,6 +25,7 @@ import numpy as np
 from . import config as CF
 from .explore import EXPLORE_DIR, nsga_mixed, space_from_results, surrogate_from_results
 from .explore_scope import _gp_mean, cost_rows, nondominated
+from .candidates import superseded_raise
 from .evaluate import xkey
 from .run import RDM_DIR
 
@@ -45,8 +46,11 @@ class Model:
 
     def cost_zone(self, xs):
         out = np.zeros((len(xs), len(self.zones)))
+        sup = dict((j, i) for i, j in superseded_raise(self.V))
         for p, x in enumerate(xs):
             for i, v in enumerate(self.V):
+                if i in sup and x[sup[i]]:
+                    continue                              # raised homes are relocated: no raising cost
                 c = float(np.interp(x[i], *self.cvals[i])) if v["continuous"] else float(self.cvals[i][1][int(x[i])])
                 out[p, self.zones.index(self.vzone[i])] += c
         return out
@@ -175,7 +179,7 @@ def run(cfg=None, log=print, out_dir=None, evaluator=None):
           "households": Mn["households"][:, 0].astype(float), "livability": Mn["livability"][:, 0].astype(float),
           "ecology": Mn["ecology"][:, 0].astype(float), "cost": cz.sum(1)}
     nm["damage"] = nm["damage_zone"].sum(1)
-    G = np.column_stack([nm["damage"], nm["cost"], -nm["livability"], -nm["ecology"]])
+    G = np.column_stack([nm["damage"], nm["cost"]])             # Livability / Ecology: auxiliary, not a Pareto criterion
     par = np.flatnonzero(nondominated(G))
 
     def st_cols(st):

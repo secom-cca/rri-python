@@ -41,10 +41,22 @@
     "forest": {
       "hand_min_m": 20.0
     },
+    "forest_mgmt": {
+      "hand_min_m": 0.0,
+      "split_owner": true,
+      "min_cells": 3
+    },
+    "housing": "split",
     "relocate": {
       "depth_min_m": 1.0,
       "raise_m": 1.0,
       "dest": "new"
+    },
+    "raise": {
+      "depth_min_m": 1.0,
+      "heights_m": [
+        1.0
+      ]
     },
     "pump_urban": {
       "mmh": 10.0,
@@ -134,10 +146,8 @@
       "damage_zones": "all",
       "cost_zones": "all",
       "weights": {
-        "damage": 0.45,
-        "cost": 0.35,
-        "livability": 0.1,
-        "ecology": 0.1
+        "damage": 0.55,
+        "cost": 0.45
       },
       "regret_threshold": 0.05
     },
@@ -151,10 +161,8 @@
         "中流"
       ],
       "weights": {
-        "damage": 0.4,
-        "cost": 0.2,
-        "livability": 0.25,
-        "ecology": 0.15
+        "damage": 0.65,
+        "cost": 0.35
       },
       "regret_threshold": 0.05
     },
@@ -166,20 +174,17 @@
         "下流"
       ],
       "weights": {
-        "damage": 0.6,
-        "cost": 0.2,
-        "livability": 0.1,
-        "ecology": 0.1
+        "damage": 0.75,
+        "cost": 0.25
       },
       "regret_threshold": 0.05
     },
-    "住民": {
+    "地域主体": {
       "damage_zones": "all",
       "cost_zones": [],
       "weights": {
-        "households": 0.6,
-        "damage": 0.1,
-        "livability": 0.3
+        "households": 0.7,
+        "damage": 0.3
       },
       "regret_threshold": 0.05
     }
@@ -252,6 +257,15 @@
         "label": "森林化の効果係数（土層厚・粗度の増分 × 係数）",
         "basis": "森林の成熟度（植栽後の年数）を想定した仮定"
       },
+      "forest_mgmt_effect": {
+        "low": 0.0,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "森林整備の効果係数（既存森林の土壌貯留 d_a, d_m の増分 20% × 係数）",
+        "basis": "間伐・下層植生回復による保水力の改善量は観測例が少なく大洪水では小さいとされるため、0（効果なし）〜1 の幅を仮定"
+      },
       "raise_effect": {
         "low": 0.5,
         "high": 1.0,
@@ -312,6 +326,8 @@
     "continuous": [
       "paddy_dam",
       "forest",
+      "forest_mgmt",
+      "forest_mgmt_national",
       "storage_private"
     ],
     "cell_order": "random",
@@ -334,9 +350,8 @@
       "p_mut": 0.15,
       "objectives": [
         "cost",
-        "reliability",
         "damage_mean",
-        "ecology"
+        "reliability"
       ]
     },
     "verify": {
@@ -359,27 +374,40 @@
       "actors": {
         "levee": "国",
         "retention": "国",
+        "forest_mgmt_national": "国",
         "pump_urban": "自治体",
-        "pump_agri": "自治体",
         "storage_public": "自治体",
         "relocate": "自治体",
-        "paddy_dam": "地域",
-        "forest": "地域",
-        "storage_private": "地域"
+        "raise": "自治体",
+        "pump_agri": {
+          "国": 0.6,
+          "自治体": 0.25,
+          "地域主体": 0.15
+        },
+        "forest_mgmt": {
+          "国": 0.3,
+          "自治体": 0.4,
+          "地域主体": 0.3
+        },
+        "paddy_dam": "地域主体",
+        "forest": "地域主体",
+        "storage_private": "地域主体"
       },
-      "zonal": [
-        "自治体"
-      ],
+      "zonal": {
+        "自治体": {
+          "上流": "上流自治体",
+          "中流": "上流自治体",
+          "下流": "下流自治体"
+        }
+      },
       "optimisation": {
         "pop": 64,
         "gens": 40,
         "p_mut": 0.15,
         "objectives": [
           "cost",
-          "reliability",
           "damage_mean",
-          "ecology",
-          "livability"
+          "reliability"
         ]
       },
       "max_points": 1500
@@ -844,11 +872,21 @@
     }
   },
   "multi": {
-    "name": "abukuma_dapp_multi",
-    "single_name": "abukuma_dapp_single",
+    "name": "abukuma_dapp_multi_gui_86afa3f4",
+    "single": {
+      "label": "流域（単一主体）"
+    },
     "robust_overrides": {
       "scenarios": {
-        "n": 64
+        "n": 32
+      },
+      "weights": {
+        "damage": 0.45,
+        "pop": 0.1,
+        "cost": 0.25,
+        "ecology": 0.1,
+        "livability": 0.05,
+        "agriculture": 0.05
       }
     },
     "actors": {
@@ -861,7 +899,7 @@
           "遊水地2・下流"
         ],
         "budget": {
-          "total_oku": 1000.0,
+          "total_oku": null,
           "per_decade_oku": 400.0
         },
         "metric": "basin",
@@ -886,7 +924,7 @@
           "雨水貯留（公共）・上流"
         ],
         "budget": {
-          "total_oku": 300.0,
+          "total_oku": null,
           "per_decade_oku": 120.0
         },
         "metric": "上流",
@@ -909,8 +947,8 @@
           "雨水貯留（公共）・下流"
         ],
         "budget": {
-          "total_oku": 600.0,
-          "per_decade_oku": 250.0
+          "total_oku": null,
+          "per_decade_oku": 100.0
         },
         "metric": "下流",
         "targets": {
@@ -926,7 +964,7 @@
     },
     "budget_status": {
       "status": "仮定",
-      "basis": "主体ごとの初期費用の総額と10年ごとの上限（合計は単一主体の Robust DAPP と同程度）"
+      "basis": "10年ごとの財政・実施容量（国 400・上流 120・下流 250 億円; 単一主体は合計 770 億円）。総額の上限は置かない"
     },
     "subsidy": {
       "relocate": {
@@ -961,20 +999,58 @@
       "switch_from_year": 2050
     },
     "search": {
-      "n_scenarios": 27,
-      "pop": 24,
-      "gens": 10,
+      "n_scenarios": 16,
+      "pop": 12,
+      "gens": 4,
       "p_mut": 0.2,
-      "basin_pop": 32,
-      "basin_gens": 12
+      "basin_pop": 16,
+      "basin_gens": 4
     },
     "choose": {
       "coverage_tolerance": 0.03
     },
     "options_year": 2060,
-    "dependence_scenarios": 16,
+    "dependence_scenarios": 8,
     "network": {
       "max_states_per_year": 6
+    },
+    "gui": {
+      "sizes": {
+        "fast": {
+          "robust_overrides": {
+            "scenarios": {
+              "n": 32
+            }
+          },
+          "dependence_scenarios": 8,
+          "search": {
+            "n_scenarios": 16,
+            "pop": 12,
+            "gens": 4,
+            "basin_pop": 16,
+            "basin_gens": 4
+          }
+        },
+        "standard": {
+          "robust_overrides": {
+            "scenarios": {
+              "n": 64
+            }
+          },
+          "search": {
+            "n_scenarios": 32,
+            "pop": 16,
+            "gens": 6,
+            "basin_pop": 24,
+            "basin_gens": 8
+          }
+        },
+        "full": {}
+      }
+    },
+    "gui_inputs": {
+      "base": "abukuma_dapp_multi",
+      "size": "fast"
     }
   }
 }

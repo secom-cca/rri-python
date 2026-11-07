@@ -3,15 +3,22 @@
 Each Variable is one gene: an index into `options`; option 0 is always "do
 nothing".  `edits(x, scen)` turns a decision vector into GUI-engine edits
 (the same measures as the GUI: levee / retention / paddy_dam / forest /
-relocate / raise), so the RRI model is used unchanged.
+forest_mgmt / relocate / raise / pump / storage), so the RRI model is used unchanged.
 
     levee      per zone: existing levee + 0/1/2 m on the river cells with upstream area >= min_area_km2;
                select "overflow": only those whose peak water level in the baseline reaches the crest
                (ground + existing levee) within margin_m (where the river actually overtops)
     retention  n sites: farmland/forest next to a large river, low HAND, not built-up
     paddy_dam  per zone: all paddies
-    forest     per zone: farmland with HAND >= hand_min_m (upland)
-    relocate   per zone: homes flooded >= depth_min_m in the baseline: none / raise / relocate
+    forest     per zone: farmland with HAND >= hand_min_m (upland) -> new forest (森林化)
+    forest_mgmt_national / forest_mgmt
+               per zone: existing forest -> 森林整備 (more soil storage), split into 国有林 (KSJ A45,
+               actor 国) and the other forest (民有林等) when `national_forest` is given
+    relocate   per zone: homes flooded >= depth_min_m in the baseline: none / relocate
+    raise      per zone: homes flooded >= raise.depth_min_m: none / + heights_m (床高の嵩上げ);
+               listed after relocate, so homes moved by an active relocation are not raised (nor paid)
+               candidates.housing "combined" (configs without the key, e.g. stored explorations used by
+               the roadmap / DAPP): one variable `relocate` with options none / raise / relocate
     pump_urban      per zone: 排水ポンプ（下水道）on low (HAND <= hand_max_m) built-up cells flooded >= depth_min_m
     pump_agri       per zone: 排水機場（農業用排水）on low farmland cells flooded >= depth_min_m
     storage_public  per zone: 雨水貯留浸透（公共: 調整池・貯留管）on built-up cells flooded >= depth_min_m
@@ -84,7 +91,8 @@ def _grow_site(seed, ok, nx, n_cells):
     return site
 
 
-def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_river_hmax=None) -> list[Variable]:
+def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_river_hmax=None,
+          national_forest=None) -> list[Variable]:
     c = cfg["candidates"]
     ny, nx = d.shape
     zm = zone_masks(d, meta, cfg["zones"])
@@ -149,14 +157,40 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_rive
             cells = np.flatnonzero(mz & np.isin(lc, [ci["paddy"], ci["field"]]) & (h >= fo["hand_min_m"]) & (h < 1e8))
             if len(cells):
                 out.append(Variable(f"森林化・{z}", "forest", z, ["なし", f"HAND {fo['hand_min_m']:.0f} m以上の農地"], cells.tolist(), [None, {}]))
+        fm = c.get("forest_mgmt")
+        if fm is not None:
+            fcells = mz & (lc == ci["forest"]) & (h >= fm.get("hand_min_m", 0.0))
+            nat = np.zeros_like(fcells) if national_forest is None or not fm.get("split_owner", True) \
+                else np.asarray(national_forest, bool).ravel()
+            for typ, lab, sel, owner in (("forest_mgmt_national", "森林整備（国有林）", fcells & nat, "national"),
+                                         ("forest_mgmt", "森林整備（民有林等）" if nat.any() else "森林整備", fcells & ~nat, "other")):
+                cells = np.flatnonzero(sel)
+                if len(cells) >= fm.get("min_cells", 1):
+                    out.append(Variable(f"{lab}・{z}", typ, z, ["なし", "全域"], cells.tolist(),
+                                        [None, {"type": "forest_mgmt", "owner": owner}]))
         rl = c.get("relocate")
-        if rl is not None and baseline_depth is not None:
+        if baseline_depth is not None:
             home = (assets.households.ravel() >= 0.5)
-            cells = np.flatnonzero(mz & home & (np.nan_to_num(baseline_depth).ravel() >= rl["depth_min_m"]))
-            if len(cells):
-                out.append(Variable(f"住宅対策・{z}", "relocate", z, ["なし", f"嵩上げ +{rl['raise_m']} m", "移転"], cells.tolist(),
-                                    [None, {"type": "raise", "height": float(rl["raise_m"]), "terrain": False},
-                                     {"type": "relocate", "dest": rl["dest"], "density": 40}]))
+            bd = np.nan_to_num(baseline_depth).ravel()
+            if rl is not None and c.get("housing", "combined") == "combined":
+                cells = np.flatnonzero(mz & home & (bd >= rl["depth_min_m"]))
+                if len(cells):
+                    out.append(Variable(f"住宅対策・{z}", "relocate", z, ["なし", f"嵩上げ +{rl['raise_m']} m", "移転"], cells.tolist(),
+                                        [None, {"type": "raise", "height": float(rl["raise_m"]), "terrain": False},
+                                         {"type": "relocate", "dest": rl["dest"], "density": 40}]))
+            else:
+                if rl is not None:
+                    cells = np.flatnonzero(mz & home & (bd >= rl["depth_min_m"]))
+                    if len(cells):
+                        out.append(Variable(f"移転・{z}", "relocate", z, ["なし", "移転"], cells.tolist(),
+                                            [None, {"type": "relocate", "dest": rl["dest"], "density": 40}]))
+                ra = c.get("raise")
+                if ra is not None:
+                    cells = np.flatnonzero(mz & home & (bd >= ra["depth_min_m"]))
+                    hs = [float(x) for x in ra["heights_m"]]
+                    if len(cells):
+                        out.append(Variable(f"嵩上げ・{z}", "raise", z, ["なし"] + [f"+{x:g} m" for x in hs], cells.tolist(),
+                                            [None] + [{"type": "raise", "height": x, "terrain": False} for x in hs]))
     # 内水対策 (inland flooding): where the baseline floods (depth >= depth_min_m)
     inl = {k: c[k] for k in ("pump_urban", "pump_agri", "storage_public", "storage_private") if c.get(k) is not None}
     if inl and baseline_depth is not None:
@@ -183,6 +217,19 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_rive
                 if len(idx) >= spec.get("min_cells", 1):
                     out.append(Variable(name, k, z, ["なし", lab], idx.tolist(), [None, par]))
     return out
+
+
+def superseded_raise(variables):
+    """[(i, j)]: relocation variable i and raise variable j of the same zone whose homes are all
+    relocated when i is active (raise cells within the relocation cells: same or higher depth
+    threshold, i.e. no more cells).  With i active, j has no effect and no cost (the engine applies
+    the relocation first); additive cost tables / surrogate features use this to stay consistent.
+    Accepts Variables or the variable dicts stored in results.json."""
+    g = lambda v, k: v[k] if isinstance(v, dict) else getattr(v, k)  # noqa: E731
+    n = lambda v: v["n_cells"] if isinstance(v, dict) else len(v.cells)  # noqa: E731
+    rel = {g(v, "zone"): i for i, v in enumerate(variables) if g(v, "type") == "relocate" and len(g(v, "options")) == 2}
+    return [(rel[g(v, "zone")], j) for j, v in enumerate(variables)
+            if g(v, "type") == "raise" and g(v, "zone") in rel and n(v) <= n(variables[rel[g(v, "zone")]])]
 
 
 def edits(variables, x, scen=None):

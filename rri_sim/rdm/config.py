@@ -22,8 +22,14 @@ DEFAULT = {
         "levee": {"min_area_km2": 5.0, "heights_m": [0, 1, 2], "select": "overflow", "margin_m": 0.2},
         "retention": {"n_sites": 3, "depth_m": 3.0, "site_km2": 2.0, "hand_max_m": 3.0, "min_river_km2": 300.0},
         "paddy_dam": {},                                                      # per zone, all paddies
-        "forest": {"hand_min_m": 20.0},                                       # per zone, upland farmland
-        "relocate": {"depth_min_m": 1.0, "raise_m": 1.0, "dest": "new"},      # per zone: none / raise / relocate
+        "forest": {"hand_min_m": 20.0},                                       # per zone, upland farmland -> 森林化
+        # 森林整備 of the existing forest, per zone and owner (国有林 KSJ A45 / 民有林等)
+        "forest_mgmt": {"hand_min_m": 0.0, "split_owner": True, "min_cells": 3},
+        # housing: "split" = separate variables 移転 (none / relocate) and 嵩上げ (none / heights_m);
+        # "combined" (stored configs without this key) = one variable none / raise (raise_m) / relocate
+        "housing": "split",
+        "relocate": {"depth_min_m": 1.0, "raise_m": 1.0, "dest": "new"},
+        "raise": {"depth_min_m": 1.0, "heights_m": [1.0]},
         # 内水対策 (流域治水施策集 #5 #6 #8–#10): on cells flooded >= depth_min_m in the baseline
         "pump_urban": {"mmh": 10.0, "hand_max_m": 5.0, "depth_min_m": 0.1, "min_cells": 3},
         "pump_agri": {"mmh": 3.0, "hand_max_m": 5.0, "depth_min_m": 0.1, "min_cells": 3},
@@ -50,14 +56,16 @@ DEFAULT = {
     },
     # stakeholders: evaluation scope (zones), weights of normalised metrics, satisficing regret
     "stakeholders": {
+    # (Livability / Ecology composites are not weighted: auxiliary indicators only; robustness.utility still
+    #  accepts "livability" / "ecology" weights for compatibility)
         "国": {"damage_zones": "all", "cost_zones": "all",
-               "weights": {"damage": 0.45, "cost": 0.35, "livability": 0.1, "ecology": 0.1}, "regret_threshold": 0.05},
+               "weights": {"damage": 0.55, "cost": 0.45}, "regret_threshold": 0.05},
         "上流自治体": {"damage_zones": ["上流", "中流"], "cost_zones": ["上流", "中流"],
-                   "weights": {"damage": 0.4, "cost": 0.2, "livability": 0.25, "ecology": 0.15}, "regret_threshold": 0.05},
+                   "weights": {"damage": 0.65, "cost": 0.35}, "regret_threshold": 0.05},
         "下流自治体": {"damage_zones": ["下流"], "cost_zones": ["下流"],
-                   "weights": {"damage": 0.6, "cost": 0.2, "livability": 0.1, "ecology": 0.1}, "regret_threshold": 0.05},
-        "住民": {"damage_zones": "all", "cost_zones": [],
-               "weights": {"households": 0.6, "damage": 0.1, "livability": 0.3}, "regret_threshold": 0.05},
+                   "weights": {"damage": 0.75, "cost": 0.25}, "regret_threshold": 0.05},
+        "地域主体": {"damage_zones": "all", "cost_zones": [],
+                 "weights": {"households": 0.7, "damage": 0.3}, "regret_threshold": 0.05},
     },
     "sobol": {"n_base": 512},
     # ---- sensitivity analysis (rri_sim.rdm.sensitivity, scripts/run_sensitivity.py; docs/10_sensitivity.md)
@@ -82,6 +90,9 @@ DEFAULT = {
                              "label": "田んぼダムの効果係数（貯留深 15 cm × 係数）", "basis": "取組率・排水口管理のばらつきを想定した仮定"},
             "forest_effect": {"low": 0.3, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
                               "label": "森林化の効果係数（土層厚・粗度の増分 × 係数）", "basis": "森林の成熟度（植栽後の年数）を想定した仮定"},
+            "forest_mgmt_effect": {"low": 0.0, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
+                                   "label": "森林整備の効果係数（既存森林の土壌貯留 d_a, d_m の増分 20% × 係数）",
+                                   "basis": "間伐・下層植生回復による保水力の改善量は観測例が少なく大洪水では小さいとされるため、0（効果なし）〜1 の幅を仮定"},
             "raise_effect": {"low": 0.5, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
                              "label": "嵩上げの効果係数（床高の上げ幅 × 係数）", "basis": "対象世帯の実施率を想定した仮定"},
             "cost_factor": {"low": 0.8, "high": 1.5, "nominal": 1.0, "kind": "post", "status": "仮定",
@@ -105,26 +116,34 @@ DEFAULT = {
     "explore": {
         "name": "abukuma_explore",
         "target_ratio": 1.0,                  # 目標: 被害額 <= 現在気候・対策なしの被害額 x target_ratio
-        "continuous": ["paddy_dam", "forest", "storage_private"],   # implementation rate 0-100 % of the candidate cells
+        "continuous": ["paddy_dam", "forest", "forest_mgmt", "forest_mgmt_national", "storage_private"],   # implementation rate 0-100 % of the candidate cells
         "cell_order": "random",               # which cells a partial rate takes ("random" = spatially uniform, seeded)
         "current_baseline": True,             # measures set against the current-climate baseline (no extra run per climate)
         "zero_share": 0.2,                    # share of training samples with a rate of exactly 0 (measure not used)
         "design": {"n_train": 240, "n_none": 16, "n_val": 30, "adaptive_rounds": 6, "adaptive_batch": 10, "pool": 4000},
         "ensemble": {"n": 512},               # uncertainty samples per policy on the surrogate
+        # objectives: cost, expected damage, target achievement rate.  Sub-indicators (flooded / relocated
+        # population, service access, natural habitat, habitat connectivity) and the composite Livability /
+        # Ecology scores are reported for every policy but not optimised (they can be added here if wanted)
         "optimisation": {"pop": 64, "gens": 60, "p_mut": 0.15,
-                         "objectives": ["cost", "reliability", "damage_mean", "ecology"]},
+                         "objectives": ["cost", "damage_mean", "reliability"]},
         "verify": {"n_policies": 10, "n_scenarios": 12},
         "target_curve": [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
         "rain_bins": 5,
-        # trade spaces by implementing actor (explore_scope.py, docs/12): measure type -> actor
-        # (流域治水施策集の実施主体, docs/13 13.10); actors in `zonal` are split by zone (自治体・上流, ...)
+        # trade spaces by implementing actor (explore_scope.py, docs/12): measure type -> actor, or {actor: cost
+        # share} for a measure several actors implement jointly (it needs all of them; cost split by share).
+        # 流域治水施策集の実施主体 (docs/13 13.10).  `zonal` maps an actor to an actor per zone (上流 / 下流の自治体).
         "scopes": {
-            "actors": {"levee": "国", "retention": "国",
-                       "pump_urban": "自治体", "pump_agri": "自治体", "storage_public": "自治体", "relocate": "自治体",
-                       "paddy_dam": "地域", "forest": "地域", "storage_private": "地域"},
-            "zonal": ["自治体"],
+            "actors": {"levee": "国", "retention": "国", "forest_mgmt_national": "国",
+                       "pump_urban": "自治体", "storage_public": "自治体", "relocate": "自治体", "raise": "自治体",
+                       # 農業用排水機場: 国営・県営土地改良事業 + 土地改良区（負担割合は仮定）
+                       "pump_agri": {"国": 0.6, "自治体": 0.25, "地域主体": 0.15},
+                       # 民有林の森林整備: 造林補助（国・県）・森林環境譲与税（市町村）+ 森林所有者（負担割合は仮定）
+                       "forest_mgmt": {"国": 0.3, "自治体": 0.4, "地域主体": 0.3},
+                       "paddy_dam": "地域主体", "forest": "地域主体", "storage_private": "地域主体"},
+            "zonal": {"自治体": {"上流": "上流自治体", "中流": "上流自治体", "下流": "下流自治体"}},
             "optimisation": {"pop": 64, "gens": 40, "p_mut": 0.15,
-                             "objectives": ["cost", "reliability", "damage_mean", "ecology", "livability"]},
+                             "objectives": ["cost", "damage_mean", "reliability"]},
             "max_points": 1500,               # stored per actor combination (non-dominated first, then a random sample)
         },
     },

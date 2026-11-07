@@ -2,10 +2,11 @@
 
 An evaluator provides
     cost(x)          -> {"total", "by_zone", "by_type"} [億円, present value, nominal unit costs]
-    simulate(x, sim) -> {"damage", "damage_zone", "households", "livability",
-                         "ecology", "inundated_km2", "peak_q"}
+    simulate(x, sim) -> {"damage", "damage_zone", "households", "pop_hazard", sub-indicators
+                         (relocated_households / _population, service_access, natural_habitat_km2,
+                         habitat_connectivity), "livability", "ecology" (auxiliary), "inundated_km2", "peak_q"}
 for a decision vector x (see candidates) and a simulated scenario
-sim = {"climate", "rain_gamma", "paddy_effect", "forest_effect", "retention_effect"}.
+sim = {"climate", "rain_gamma", "paddy_effect", "forest_effect", "forest_mgmt_effect", "retention_effect"}.
 Post-hoc factors (cost_factor, asset_factor) are applied later (uncertainty.apply_post).
 """
 from __future__ import annotations
@@ -34,8 +35,10 @@ def gparams_for(sim: dict) -> dict:
                 "sea_level_rise_m": sim.get("sea_level_rise_m", 0.0), "intensity_gamma": sim.get("rain_gamma", 1.0)}
     else:
         clim = {"preset": sim.get("climate", "current"), "intensity_gamma": sim.get("rain_gamma", 1.0)}
+    from ..gui.engine import FOREST_MGMT_DA_GAIN
     return {"paddy_store_m": 0.15 * sim.get("paddy_effect", 1.0), "paddy_release_mmh": 5.0,
             "forest_n": FOREST_N_FARM + kf * (FOREST_N_FULL - FOREST_N_FARM), "forest_soil_m": 1.0 * kf,
+            "forest_mgmt_da_gain": FOREST_MGMT_DA_GAIN * sim.get("forest_mgmt_effect", 1.0),
             "climate": clim}
 
 
@@ -120,7 +123,8 @@ class RRIEvaluator:
              "livability": res["livability"]["score"], "ecology": res["ecology"]["score"],
              # 浸水人口: residents of cells flooded >= 0.5 m (indicators.livability, 安全・安心)
              "pop_hazard": float(res["livability"].get("pop_in_hazard_share", 0.0) * self.pop_total),
-             "inundated_km2": res["inundated_km2"], "peak_q": float(np.nanmax(res["gauges"][g]["sim"]))}
+             "inundated_km2": res["inundated_km2"], "peak_q": float(np.nanmax(res["gauges"][g]["sim"])),
+             **{k: v for k, v in res.get("sub_indicators", {}).items() if k != "flooded_population" and v is not None}}
         self.cache[key] = m
         if self.cache_path:
             with open(self.cache_path, "a", encoding="utf-8") as f:

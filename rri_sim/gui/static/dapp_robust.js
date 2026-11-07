@@ -1,4 +1,6 @@
 // Robust DAPP viewer (results.json of `scripts/run_dapp.py --robust`, docs/11 11.9); trigger panel: POST /api/dapp/robust/simulate
+import { renderOptions, mapMarkers } from '/static/dapp_options.js';
+
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d }));
 const pct = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : `${(100 * v).toFixed(d)}%`);
@@ -8,6 +10,8 @@ function chart(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new
 const metCol = (m) => `hsl(${Math.round(120 * m)}, 65%, ${m > 0.5 ? 38 : 48}%)`;
 const REASON = { observed: '観測した被害', projected: '予測（観測した傾向）', initial: '初期' };
 let D = null, NAME = null, E = null, NODES = null, EDGES = null, ATP = null, SEL = null, TRIG = null, TGT = null;
+
+$('o-map-png').onclick = () => { const a = document.createElement('a'); a.href = $('r-map').toDataURL('image/png'); a.download = `${NAME}_pathways_map_${SEL}.png`; a.click(); };
 
 export function render(data, name) {
   D = data; NAME = name;
@@ -19,7 +23,7 @@ export function render(data, name) {
   drawSummary(); drawPanel(); drawAll();
 }
 function drawAll() { drawInit(); drawTrade(); select(SEL); drawUnr(); drawVer(); }
-function select(n) { SEL = n; drawInit(); drawDetail(); drawMap(); drawBranches(); drawATP(); drawScen(); drawEdges(); drawLand(); }
+function select(n) { SEL = n; renderOptions({ D, E, SEL, short, select }); drawInit(); drawDetail(); drawMap(); drawBranches(); drawATP(); drawScen(); drawEdges(); drawLand(); }
 const node = (i) => NODES[String(i)] || { label: `組合せ ${i}`, implementation: [], landuse: {} };
 const short = (i) => { const n = node(i); return i === 0 ? '施策なし' : `#${i} ${n.implementation.length} 施策・${fmt(n.initial)} 億円`; };
 const row = (i) => E.table.find((r) => r.node === i);
@@ -138,6 +142,7 @@ function drawMap() {
     });
     ctx.lineWidth = 1.5; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#0f172a';
     ctx.beginPath(); ctx.arc(X(b.year), yy(b), 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    mapMarkers(ctx, b, X(b.year), yy(b));                // future option space: options lost by this move (dapp_options.js)
     if (b.end) {                       // pathways ending on this branch: met / not met (対応できない将来)
       const fail = b.end - b.end_met, same = tree.filter((x) => x.end && x.node === b.node);
       ctx.fillStyle = fail ? '#dc2626' : '#15803d';

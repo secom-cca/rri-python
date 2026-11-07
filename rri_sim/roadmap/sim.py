@@ -81,7 +81,7 @@ class State:
         n = self.y1 - self.y0
         self.capital = np.zeros(n); self.maint = np.zeros(n); self.coord = np.zeros(n); self.change = np.zeros(n)
         self.capital_var = np.zeros((n, self.nV)); self.maint_var = np.zeros((n, self.nV))     # per variable (cost by actor)
-        self.budgets = None                  # {payer: {total_oku, per_decade_oku}} (Multi-Actor DAPP); None = cfg budget
+        self.budgets = None                  # {payer: {total_oku (None = no limit), per_decade_oku}} (Multi-Actor DAPP); None = cfg budget
         self.payer = None                    # var -> {payer: share of its cost}
         self.spent_by = {}
         self.actions: list[Action] = []
@@ -243,7 +243,8 @@ class State:
         for a, sh in self.shares(i).items():
             b, x = self.budgets[a], c * sh
             d = dec_by.get(a, 0.0)
-            if (d + x > b["per_decade_oku"] + 1e-9 and d > 0) or self.spent_by.get(a, 0.0) + x > b["total_oku"] + 1e-9:
+            tot = b.get("total_oku")                             # None: no limit on the total (per-decade capacity only)
+            if (d + x > b["per_decade_oku"] + 1e-9 and d > 0) or (tot is not None and self.spent_by.get(a, 0.0) + x > tot + 1e-9):
                 return False
         return True
 

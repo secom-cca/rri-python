@@ -6,14 +6,17 @@ population, facilities, HAND, dams, tide).  For each event the spin-up
 cached; scenario runs restart from that state and only simulate the flood
 window.  Scenario = list of edits painted in the GUI:
 
-  {"type": "forest",     "cells": [...]}                       森林化（土地利用→新規森林）
+  {"type": "forest",     "cells": [...]}                       森林化（農地・市街地等 → 新規森林クラス forest_new）
+  {"type": "forest_mgmt", "cells": [...], "owner": "national"} 森林整備（既存森林 → forest_managed: 校正済み森林の
+                                                               土壌貯留 d_a = soil_depth × gamma_a, d_m を増強;
+                                                               owner は実施主体の区分 national 国有林 / other 民有林）
   {"type": "paddy_dam",  "cells": [...]}                       田んぼダム（水田セルのみ有効）
   {"type": "relocate",   "cells": [...]}                       住宅・事業所の移転（安全な市街地へ）
   {"type": "raise",      "cells": [...], "height": 1.0,
                          "terrain": false}                     嵩上げ（床高 / 盛土）
   {"type": "levee",      "cells": [...], "height": 1.0}        堤防（範囲内の河道セル, 既存堤防 + height）
   {"type": "retention",  "cells": [...], "depth": 2.0,
-                         "inlet": 1.0}                         遊水地（掘削＋越流堤）
+                         "auto": true | "q_ratio": 0.7}        遊水地（掘削＋周囲堤＋越流堤）
   {"type": "pump",       "cells": [...], "target": "urban",
                          "mmh": 20.0}                          排水ポンプの増強（低地の市街地 urban / 農地 agri;
                                                                河川の水位が高くても河道へ排水, 内水対策）
@@ -21,10 +24,20 @@ window.  Scenario = list of edits painted in the GUI:
                          "release_mmh": 2.0, "kind": "public"} 雨水貯留浸透施設（市街地セル; 公共 public / 各戸 private）
   {"type": "prerelease", "fraction": 0.5}                      ダムの事前放流（既存ダムの洪水調節容量 × (1 + fraction)）
 Global scenario parameters (gparams): paddy_store_m, paddy_release_mmh,
-forest_n, forest_soil_m, unit_costs{...}.
+forest_n, forest_soil_m, forest_mgmt_da_gain, forest_mgmt_n_gain, unit_costs{...}.
+
+Dynamic storage measures (both are simulated in time, not as fixed volumes):
+  田んぼダム  paddy_dam class: surface water up to `paddy_store_m` is held by the outlet
+              plate (not moved by overland flow) and released as a linear reservoir,
+              `paddy_release_mmh` when full (kernels.retained_release).
+  遊水地      off-channel solver.Dam with release_q: only the river discharge above q_cut
+              enters over the weir (until the capacity area x depth is full); it drains back
+              only while the river is below RETENTION_RELEASE_RATIO x q_cut.
 
 Outputs per run: inundation frames, damage, hydrographs at all gauges, project
-cost, Livability and Ecology scores (rri_sim.indicators).
+cost, `sub_indicators` (flooded / relocated population, service accessibility,
+natural habitat area, habitat connectivity) and, as auxiliary composite scores,
+Livability and Ecology (rri_sim.indicators).
 
 Approximation (documented in the UI): land-use edits do not alter the
 spin-up state, i.e. antecedent soil moisture is that of the baseline.
@@ -55,7 +68,7 @@ from ..cases import BASINS, EVENTS
 from ..data import estat, facilities, landuse, mlit_water
 from ..events import collect_gauges, gridded_rainfall
 from ..solver import Simulation
-from ..workflow import (CACHE, FOREST_NEW, PADDY_DAM, PRESETS, boundary_conditions, build_preset, cache_key,
+from ..workflow import (CACHE, FOREST_MGMT, FOREST_NEW, PADDY_DAM, PRESETS, boundary_conditions, build_preset, cache_key,
                         default_res, domain_cached,
                         drainage_arrays)
 
@@ -76,6 +89,7 @@ RESOLUTIONS = {125.0: "詳細・低速", 250.0: "標準・校正済み", 500.0: 
 ASSET_CACHE_VERSION = 2            # relocation destinations: built-up cells this high above drainage
 ASSET_FILE_VERSION = 3             # assets only (v3: farm households 2020年農林業センサス)
 SUBGRID_VERSION = 1                # sub-grid building / farmland elevations (rri_sim.subgrid)
+FOREST_MGMT_DA_GAIN = 0.2          # 森林整備: relative increase of the forest soil storage d_a, d_m (仮定; effect uncertain)
 
 
 def b64(a: np.ndarray, dtype) -> str:
@@ -146,6 +160,23 @@ class BasinSession:
                                            >= I.AccessParams().commercial_min_employees)
         self.road, self.pop, self.fac = extra["road"], pop, fac
         pickle.dump((self.road, self.pop, self.fac), open(path, "wb"))
+
+    def national_forest(self):
+        """(ny, nx) bool mask of 国有林野 (KSJ A45) cells, cached; None if the data cannot be loaded."""
+        if getattr(self, "_national_forest", None) is None:
+            path = CACHE / f"national_forest_{self.ckey}.pkl"
+            try:
+                if path.exists():
+                    self._national_forest = pickle.load(open(path, "rb"))
+                else:
+                    from ..data.national_forest import national_forest_grid
+                    m = national_forest_grid(self.d.transform, self.d.shape, self.d.crs, self.b.get("prefs", ()))
+                    self._national_forest = m & self.d.mask
+                    pickle.dump(self._national_forest, open(path, "wb"))
+            except Exception as e:   # no network / data: forest management is not split by owner
+                log.warning("national forest data unavailable: %s", e)
+                return None
+        return self._national_forest
 
     # ----------------------------------------------------------- static data
     def static_payload(self) -> dict:
@@ -343,6 +374,15 @@ class BasinSession:
         fn_cls = d.params.land_classes[ci[FOREST_NEW]]
         fn_cls.n = float(gparams.get("forest_n", 0.4))
         fn_cls.soil_depth = float(gparams.get("forest_soil_m", 1.0))
+        # 森林整備: the basin's (calibrated) forest with more soil storage d_a = soil_depth x gamma_a
+        # (and d_m) and optionally rougher floor (understory); gains are uncertain (forest_mgmt_effect)
+        fo_cls, fm_cls = d.params.land_classes[ci["forest"]], d.params.land_classes[ci[FOREST_MGMT]]
+        for k_, v_ in vars(fo_cls).items():
+            if k_ != "name":
+                setattr(fm_cls, k_, v_)
+        g_da = float(gparams.get("forest_mgmt_da_gain", FOREST_MGMT_DA_GAIN))
+        fm_cls.gamma_a, fm_cls.gamma_m = fo_cls.gamma_a * (1 + g_da), fo_cls.gamma_m * (1 + g_da)
+        fm_cls.n = fo_cls.n * (1 + float(gparams.get("forest_mgmt_n_gain", 0.0)))
         cell_area = d.cell_area
         # relocation destinations: high above drainage and dry in the baseline;
         # existing built-up land (集約) or gentle land for new residential sites
@@ -388,6 +428,13 @@ class BasinSession:
                 q = {"area_m2": float(sel.sum() * cell_area), "farm_area_m2": farm}
                 notes.append(f"森林化 {sel.sum()} セル ({sel.sum() * cell_area / 1e6:.2f} km²; "
                              f"n={fn_cls.n:.2f}, 土層厚 {fn_cls.soil_depth:.1f} m)")
+            elif t == "forest_mgmt":
+                sel = m & (d.landclass == ci["forest"])
+                d.landclass[sel] = ci[FOREST_MGMT]
+                owner = e.get("owner", "other")
+                q = {"area_m2": float(sel.sum() * cell_area), "owner": owner}
+                notes.append(f"森林整備（{'国有林' if owner == 'national' else '民有林等'}）{sel.sum()} セル"
+                             f" ({sel.sum() * cell_area / 1e6:.2f} km²; 土壌貯留 d_a {fo_cls.d_a * 1000:.0f} → {fm_cls.d_a * 1000:.0f} mm)")
             elif t == "pump":
                 tgt = e.get("target", "urban")
                 cls = [ci["urban"]] if tgt == "urban" else [ci[c] for c in ("paddy", "field", PADDY_DAM, "green") if c in ci]
@@ -511,7 +558,7 @@ class BasinSession:
                                   "site": site, "area_m2": float(site.sum() * cell_area)})
                 weir = float(np.sqrt(site.sum() * cell_area))           # 越流堤長 ~ one side of the site
                 q = {"area_m2": float(site.sum() * cell_area), "depth_m": dep, "weir_length_m": weir,
-                     "households": mv["households"], "capacity_m3": capacity, "q_cut": q_cut,
+                     "households": mv["households"], "population": mv["population"], "capacity_m3": capacity, "q_cut": q_cut,
                      "flood_volume_over_qcut_m3": vol_over,
                      "inlet_area_km2": float(r.area_km2[k_in]), "excluded_urban_cells": n_urban}
                 msg = (f"遊水地 {site.sum()} セル（{q['area_m2'] / 1e6:.2f} km², 貯留深 {dep:.1f} m, 容量 {capacity / 1e6:.2f} 百万m³）"
@@ -685,6 +732,13 @@ class BasinSession:
                         [dm.k for dm in dams[:n_dam0]], self.hand, surf, res.mass.rain,   # 遊水地 are off-channel
                         res.mass.river_outflow + res.mass.boundary_outflow)
         eco.pop("_quality_map", None)
+        moved = [a["q"] for a in applied if a["type"] in ("relocate", "retention")]
+        sub = {"flooded_population": float(liv.get("pop_in_hazard_share", 0.0) * pop[d.mask].sum()),   # 浸水深 0.5 m以上
+               "relocated_households": float(sum(q.get("households", 0.0) for q in moved)),
+               "relocated_population": float(sum(q.get("population", 0.0) for q in moved)),
+               "service_access": liv.get("service_access"),
+               "natural_habitat_km2": eco.get("natural_habitat_km2"),
+               "habitat_connectivity": eco.get("terrestrial_connectivity")}
         cost = C.estimate(applied, gparams.get("unit_costs"))
         frames_r = np.stack([s[1][1] for s in res.snapshots])     # (nt, nriv)
         out = {
@@ -719,6 +773,7 @@ class BasinSession:
             "dams": {dm.name: {"max_storage_mcm": float(dam_S[:, n].max() / 1e6) if dam_S.size else 0.0,
                                "capacity_mcm": dm.capacity / 1e6} for n, dm in enumerate(dams[:n_dam0])},
             "cost": cost,
+            "sub_indicators": sub,
             "livability": liv,
             "ecology": eco,
             "climate": sc.to_dict(),

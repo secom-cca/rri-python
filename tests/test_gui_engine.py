@@ -122,6 +122,7 @@ def test_scenario_simulations_conserve_mass(session):
     rain = Rainfall.uniform([0, 6 * 3600, 12 * 3600], [60.0, 0.0], s.d.shape)
     allc = list(range(s.d.shape[0] * s.d.shape[1]))
     for edits in ([], [{"type": "paddy_dam", "cells": allc}], [{"type": "forest", "cells": allc}],
+                  [{"type": "forest_mgmt", "cells": allc}],
                   [{"type": "levee", "cells": allc, "height": 3.0}]):
         d, *_ = s.apply_edits(edits, {"paddy_store_m": 0.15, "paddy_release_mmh": 5})
         res = Simulation(d, rain).run(12 * 3600, output_interval=3600)
@@ -185,3 +186,58 @@ def test_inland_flood_measures_drainage_storage_and_dam_prerelease(session):
     assert d.dam_factor == 1.5
     c = C.estimate([{"type": a["type"], "q": a["q"]} for a in applied + applied2])
     assert c["items"][0]["initial_yen"] > 0 and c["items"][1]["initial_yen"] > 0 and c["items"][0]["annual_yen"] > 0
+
+
+def test_forest_management_improves_soil_storage_of_existing_forest(session):
+    from rri_sim import costs as C
+    s = session
+    d0, cn = s.d, s.class_names
+    allc = list(range(d0.shape[0] * d0.shape[1]))
+    fo = d0.params.land_classes[cn.index("forest")]
+    d, *_r, applied, _ret = s.apply_edits([{"type": "forest_mgmt", "cells": allc, "owner": "national"}], {"forest_mgmt_da_gain": 0.5})
+    is_fo = d0.landclass == cn.index("forest")
+    assert (d.landclass[is_fo] == cn.index("forest_managed")).all() and (d.landclass[~is_fo] == d0.landclass[~is_fo]).all()
+    fm = d.params.land_classes[cn.index("forest_managed")]
+    assert np.isclose(fm.d_a, 1.5 * fo.d_a) and np.isclose(fm.d_m, 1.5 * fo.d_m)
+    assert fm.ka == fo.ka and fm.soil_depth == fo.soil_depth and fm.n == fo.n         # calibrated forest otherwise
+    q = applied[0]["q"]
+    assert q["owner"] == "national" and np.isclose(q["area_m2"], is_fo.sum() * d0.cell_area)
+    c = C.estimate(applied)
+    assert c["initial_yen"] > 0 and c["annual_yen"] > 0
+    d, *_ = s.apply_edits([{"type": "forest_mgmt", "cells": allc}], {"forest_mgmt_da_gain": 0.0})   # effect 0
+    assert np.isclose(d.params.land_classes[cn.index("forest_managed")].d_a, fo.d_a)
+
+
+def test_candidates_split_housing_and_forest_management_by_owner(session):
+    from rri_sim.rdm import candidates as CA
+    from rri_sim.rdm import config as CF
+    s = session
+    d, cn = s.d, s.class_names
+    meta = {"gauge_index": {}, "fdir": None}
+    depth = np.where(s.assets.households > 0, 1.5, 0.0)
+    nat = np.zeros(d.shape, bool)
+    nat[:, :10] = True                                                  # part of the hillside is national forest
+    cfg = CF.load({"zones": [["全域", None]]})
+    V = CA.build(d, meta, s.hand, s.assets, cn, depth, cfg, national_forest=nat)
+    by = {v.type: v for v in V}
+    assert {"relocate", "raise", "forest_mgmt", "forest_mgmt_national"} <= set(by)
+    assert by["relocate"].options == ["なし", "移転"] and by["raise"].options == ["なし", "+1 m"]
+    assert [v.type for v in V].index("relocate") < [v.type for v in V].index("raise")
+    fo = d.landclass.ravel() == cn.index("forest")
+    assert set(by["forest_mgmt_national"].cells) == set(np.flatnonzero(fo & nat.ravel()))
+    assert set(by["forest_mgmt"].cells) == set(np.flatnonzero(fo & ~nat.ravel()))
+    assert CA.superseded_raise(V) == [([v.type for v in V].index("relocate"), [v.type for v in V].index("raise"))]
+    # both active: homes are relocated, raising them costs nothing
+    i, j = CA.superseded_raise(V)[0]
+    x = [0] * len(V)
+    x[i] = x[j] = 1
+    *_r, applied, _ret = s.apply_edits(CA.edits(V, x), {})
+    raise_q = next(a["q"] for a in applied if a["type"] == "raise")
+    assert raise_q["households"] == 0
+    # stored configs without the housing key keep the combined variable (roadmap / DAPP)
+    old = CF.load({"zones": [["全域", None]]})
+    old["candidates"].pop("housing")
+    old["candidates"]["forest_mgmt"] = None
+    V0 = CA.build(d, meta, s.hand, s.assets, cn, depth, old)
+    assert [v.options for v in V0 if v.type == "relocate"] == [["なし", "嵩上げ +1.0 m", "移転"]]
+    assert not any(v.type.startswith("forest_mgmt") or v.type == "raise" for v in V0)

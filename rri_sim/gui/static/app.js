@@ -5,11 +5,12 @@ const $ = (id) => document.getElementById(id);
 
 // ------------------------------------------------------------------ constants
 const CLASS_JP = { forest: '森林', paddy: '水田', field: '畑', urban: '建物用地', water: '水域', paddy_dam: '田んぼダム',
-  forest_new: '新規森林', green: '緑地（移転跡地）', wetland: '湿地（遊水地）' };
+  forest_new: '新規森林', green: '緑地（移転跡地）', wetland: '湿地（遊水地）', forest_managed: '整備森林' };
 const CLASS_COLOR = { forest: '#3d7a46', paddy: '#cfdc78', field: '#d9b46e', urban: '#9b9b9b', water: '#5b8fd6',
-  paddy_dam: '#38c2c9', forest_new: '#14532d', green: '#86c06c', wetland: '#7fb7a6' };
+  paddy_dam: '#38c2c9', forest_new: '#14532d', green: '#86c06c', wetland: '#7fb7a6', forest_managed: '#256b3a' };
 const TOOL = {
   forest:    { jp: '森林化',     color: '#14532d' },
+  forest_mgmt: { jp: '森林整備', color: '#4d7c0f' },
   paddy_dam: { jp: '田んぼダム', color: '#06b6d4' },
   relocate:  { jp: '移転',       color: '#8b5cf6' },
   raise:     { jp: '嵩上げ',     color: '#f59e0b' },
@@ -469,7 +470,8 @@ window.addEventListener('pointerup', () => {
 function applicable(type, cells) {
   const st = S.st, cn = st.class_names, lc = st.landclass, id = (n) => cn.indexOf(n);
   if (type === 'paddy_dam') return cells.filter((c) => lc[c] === id('paddy'));
-  if (type === 'forest') return cells.filter((c) => ![id('forest'), id('water'), id('forest_new')].includes(lc[c]));
+  if (type === 'forest') return cells.filter((c) => ![id('forest'), id('water'), id('forest_new'), id('forest_managed')].includes(lc[c]));
+  if (type === 'forest_mgmt') return cells.filter((c) => lc[c] === id('forest'));
   if (type === 'levee') return cells.filter((c) => S.riverSet.has(c));
   if (type === 'relocate' || type === 'raise') return cells.filter((c) => S.value[c] > 0 && S.hh[c] + S.value[c] / 1e8 > 0.01);
   if (type === 'retention') return cells.filter((c) => !S.riverSet.has(c) && ![id('urban'), id('water')].includes(lc[c]));
@@ -487,6 +489,7 @@ function toolParams(t) {
   if (t === 'retention') return { depth: +$('ret-d').value, auto: $('ret-auto').checked, q_ratio: +$('ret-q').value / 100 };
   if (t === 'relocate') return { dest: $('rl-dest').value, density: +$('rl-dens').value };
   if (t === 'pump') return { target: $('pm-target').value, mmh: +$('pm-mmh').value };
+  if (t === 'forest_mgmt') return { owner: $('fm-owner').value };
   if (t === 'storage') return { depth_mm: +$('st-depth').value, release_mmh: +$('st-rel').value, kind: $('st-kind').value };
   return {};
 }
@@ -494,6 +497,7 @@ function describeEdit(e) {
   const km2 = (e.cells.length * S.st.dx * S.st.dy / 1e6).toFixed(2);
   const extra = e.type === 'raise' ? ` +${e.height}m${e.terrain ? '盛土' : ''}` : e.type === 'levee' ? ` 既存+${e.height}m`
     : e.type === 'retention' ? ` 貯留深${e.depth}m 越流開始=${e.auto ? '自動' : `現況ピークの${Math.round(e.q_ratio * 100)}%`}`
+    : e.type === 'forest_mgmt' ? `（${e.owner === 'national' ? '国有林' : '民有林等'}）`
     : e.type === 'relocate' ? ` →${DEST_JP[e.dest]}${e.dest !== 'existing' ? `（${e.density}人/ha）` : ''}` : '';
   return `${TOOL[e.type].jp}${e.label ? ' ' + e.label : ''}${extra}（${e.cells.length}セル, ${km2} km²）`;
 }
@@ -587,6 +591,7 @@ function costTable(cost) {
     if (it.type === 'retention') return `${fmt((x.area_m2 || 0) / 1e6, 2)} km²・貯留深 ${fmt(x.depth_m)} m・容量 ${fmt((x.capacity_m3 || 0) / 1e6, 2)} 百万m³`;
     if (it.type === 'paddy_dam') return `水田 ${fmt((x.area_m2 || 0) / 1e6, 2)} km²`;
     if (it.type === 'forest') return `${fmt((x.area_m2 || 0) / 1e6, 2)} km²`;
+    if (it.type === 'forest_mgmt') return `${x.owner === 'national' ? '国有林' : '民有林等'}・${fmt((x.area_m2 || 0) / 1e6, 2)} km²`;
     if (it.type === 'relocate') return `${fmt(x.households, 0)} 世帯・${fmt(x.employees, 0)} 人`;
     if (it.type === 'raise') return `${fmt(x.households, 0)} 世帯・+${fmt(x.height_m)} m${x.terrain ? ' 盛土' : ''}`;
     if (it.type === 'pump') return `${x.target === 'urban' ? '市街地' : '農地'}・排水能力 ${fmt(x.capacity_m3s, 0)} m³/s`;
@@ -620,8 +625,18 @@ function buildUnitCostEditor() {
 }
 function drawIndicators() {
   const b = S.base, s = S.scen;
-  if (!b) { $('liv').innerHTML = '<div class="hint">未計算です。「▶ 洪水計算を実行」で計算します。</div>'; $('eco').innerHTML = ''; $('safety').innerHTML = ''; return; }
+  if (!b) { $('sub').innerHTML = '<div class="hint">未計算です。「▶ 洪水計算を実行」で計算します。</div>'; $('liv').innerHTML = ''; $('eco').innerHTML = ''; $('safety').innerHTML = ''; return; }
   const L0 = b.livability, L1 = s?.livability, E0 = b.ecology, E1 = s?.ecology;
+  const s0 = b.sub_indicators || {}, s1 = s?.sub_indicators;
+  const srow = (n, k, unit, dir, dg, f = 1) => (s0[k] == null ? '' : `<tr><td>${n}</td>${diffCell(s0[k] * f, s1 && s1[k] != null ? s1[k] * f : null, unit, dir, dg)}</tr>`);
+  $('sub').innerHTML = '<table class="ind"><tr><th></th><th>現況</th><th>施策</th><th>差</th></tr>' +
+    srow('浸水人口（浸水深0.5 m以上）[人]', 'flooded_population', '', 'lower', 0) +
+    srow('移転世帯（移転・遊水地用地）', 'relocated_households', '', 'lower', 0) +
+    srow('移転人口 [人]', 'relocated_population', '', 'lower', 0) +
+    srow('サービスアクセス（医療・教育・商業・公共の平均）', 'service_access', '%', 'higher', 1, 100) +
+    srow('自然生息地面積 [km²]（森林・湿地・水域・緑地）', 'natural_habitat_km2', '', 'higher', 1) +
+    srow('生息地の連結性（陸域, PC近似）', 'habitat_connectivity', '%', 'higher', 1, 100) + '</table>' +
+    '<div class="hint">主要な評価軸は 費用・期待被害額・目標達成率（探索・RDM）。ここの副指標は個別に比較する。Livability／Ecology の合成スコアは互換性のため補助指標として表示。</div>';
   const sc = (x0, x1) => `<div class="score"><span class="big">${fmt(x0)}</span><span>現況</span>${x1 != null ? `<span class="big ${x1 - x0 >= 0 ? 'good' : 'bad'}">${fmt(x1)}</span><span>施策（${x1 - x0 >= 0 ? '+' : ''}${fmt(x1 - x0)}）</span>` : ''}</div>`;
   let h = sc(L0.score, L1?.score) + '<table class="ind"><tr><th>サービス</th><th>徒歩800m圏<br>人口カバー率</th><th>車10–30分<br>アクセス</th><th>平均所要<br>（車, 分）</th></tr>';
   for (const k of Object.keys(L0.services)) {
@@ -698,7 +713,8 @@ async function pollJob(job, label) {
 }
 async function runJob(edits, climate = climateParams(), label = '') {
   const params = { paddy_store_m: +$('pd-store').value / 100, paddy_release_mmh: +$('pd-rel').value,
-    forest_n: +$('fo-n').value, forest_soil_m: +$('fo-soil').value, unit_costs: S.unitCosts,
+    forest_n: +$('fo-n').value, forest_soil_m: +$('fo-soil').value, forest_mgmt_da_gain: +$('fm-gain').value / 100,
+    unit_costs: S.unitCosts,
     climate };
   const { job } = await getJSON('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ basin: S.basin, event: S.event, edits, params, res: S.res }) });
@@ -821,6 +837,8 @@ const BULK = {
   forest: { opts: [sel('lu', '対象', { farm: '水田・畑', field: '畑のみ', paddy: '水田のみ' }), HAND_OPT],
     cells: (v) => landCells(FO_LU[v.lu], v.hand),
     label: (v) => `${{ farm: '水田・畑', field: '畑', paddy: '水田' }[v.lu]}${v.hand > 0 ? `（HAND ${v.hand} m以上）` : ''}` },
+  forest_mgmt: { opts: [HAND_OPT], cells: (v) => landCells(['forest'], v.hand),
+    label: (v) => `既存森林${v.hand > 0 ? `（HAND ${v.hand} m以上）` : '（全域）'}` },
   pump: { opts: [sel('target', '対象', { urban: '低地の市街地（下水道ポンプ）', agri: '低地の農地（農業用排水機場）' })],
     cells: (v) => { const st = S.st, cls = v.target === 'urban' ? ['urban'] : ['paddy', 'field'];
       return landCells(cls, 0).filter((c) => st.hand[c] >= 0 && st.hand[c] <= 5); },

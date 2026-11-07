@@ -27,7 +27,11 @@ Ecology (生態系):
                     outflow / rain) and the natural flood pulse (share of natural
                     floodplain cells that are inundated and connected)
 
-Every sub-indicator is in [0, 1]; scores are 100 x the mean.  All parameters
+Every sub-indicator is in [0, 1]; scores are 100 x the mean.  The composite scores are kept
+for compatibility and as auxiliary indicators; the exploration / RDM objectives use cost,
+expected damage and target achievement, with the raw sub-indicators reported alongside:
+service_access (mean of the four services' accessibility, livability), natural_habitat_km2
+(area of natural / semi-natural land, ecology) and terrestrial_connectivity (habitat connectivity).  All parameters
 (speeds, suitabilities, threat weights, distances) are in the dataclasses
 below and are reported with the results.
 """
@@ -66,7 +70,7 @@ class AccessParams:
 class EcoParams:
     # habitat suitability by land class
     suitability: dict = field(default_factory=lambda: {
-        "forest": 1.0, "forest_new": 0.8, "water": 0.9, "wetland": 0.85, "paddy": 0.5,
+        "forest": 1.0, "forest_managed": 1.0, "forest_new": 0.8, "water": 0.9, "wetland": 0.85, "paddy": 0.5,
         "paddy_dam": 0.5, "green": 0.6, "field": 0.3, "urban": 0.0})
     # threats: (weight, decay distance [m])
     threats: dict = field(default_factory=lambda: {
@@ -75,6 +79,8 @@ class EcoParams:
     k: float = 0.25                          # half-saturation of degradation
     habitat_min: float = 0.5                 # cells counted as habitat for connectivity
     dispersal_m: float = 1000.0
+    # natural / semi-natural land counted as 自然生息地 (sub-indicator natural_habitat_km2)
+    natural_classes: tuple = ("forest", "forest_managed", "forest_new", "wetland", "water", "green")
     levee_threshold_m: float = 0.5           # channel cells with levees above this are disconnected
     min_river_area_km2: float = 10.0
     floodplain_hand_m: float = 5.0
@@ -114,7 +120,7 @@ def travel_time(speed_mps, sources, dx, dy):
 def car_speed(lc_names, landclass, road_frac, p: AccessParams, depth=None):
     names = np.asarray(lc_names)[landclass]
     v = np.select([road_frac >= 0.10, names == "urban", np.isin(names, ["paddy", "paddy_dam", "field", "green"]),
-                   np.isin(names, ["forest", "forest_new", "wetland"]), names == "water"],
+                   np.isin(names, ["forest", "forest_managed", "forest_new", "wetland"]), names == "water"],
                   [p.v_road, p.v_urban, p.v_farm, p.v_forest, p.v_water], p.v_forest) / 3.6
     if depth is not None:
         v = np.where(depth >= p.flood_car_depth_m, 0.0, v)
@@ -172,6 +178,7 @@ def livability(population, landclass, lc_names, road_frac, facility_cells: dict,
     out["zone_population_share"] = float(pop[zone].sum() / P)
     out["concentration"] = conc
     comps.append(conc)
+    out["service_access"] = float(np.mean(comps[:-1])) if len(comps) > 1 else 0.0   # 4 services, without 居住集約度
     out["score"] = 100.0 * float(np.mean(comps))
     if flood_depth is not None:
         d = np.nan_to_num(flood_depth)
@@ -258,6 +265,7 @@ def ecology(landclass, lc_names, road_frac, mask, dx, dy, river, embankment, dam
     e2 = 0.5 * terr + 0.25 * lateral + 0.25 * dci
     retained = float(np.clip(1.0 - outflow_volume / max(rain_volume, 1e-9), 0, 1))
     names = np.asarray(lc_names)[landclass]
+    natural = float((mask & np.isin(names, p.natural_classes)).sum() * dx * dy / 1e6)
     fp = mask & (np.nan_to_num(hand, nan=1e9) <= p.floodplain_hand_m) & (names != "urban")
     pulse = float((np.nan_to_num(max_depth)[fp] >= 0.1).mean()) if fp.any() else 0.0
     e3 = 0.5 * retained + 0.5 * pulse
@@ -265,5 +273,5 @@ def ecology(landclass, lc_names, road_frac, mask, dx, dy, river, embankment, dam
             "habitat_quality": e1, "connectivity": e2, "hydro_ecological": e3,
             "terrestrial_connectivity": terr, "river_lateral_connectivity": lateral,
             "river_longitudinal_dci": dci, "event_retention": retained,
-            "natural_flood_pulse": pulse, "params": asdict(p),
+            "natural_flood_pulse": pulse, "natural_habitat_km2": natural, "params": asdict(p),
             "_quality_map": Q}

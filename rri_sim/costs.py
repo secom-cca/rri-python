@@ -32,6 +32,10 @@ UNIT_COSTS = {
     "paddy_dam_annual_yen_10a": {"value": 400.0, "label": "田んぼダム 維持（年）", "unit": "円/10a/年",
                                  "basis": "多面的機能支払交付金 田んぼダム加算 400円/10a（香川県資料）"},
     "afforest_yen_ha": {"value": 1.5e6, "label": "植林・保育", "unit": "円/ha", "basis": "仮定（植栽・下刈り等の初期費用）"},
+    "forest_mgmt_yen_ha": {"value": 5.0e5, "label": "森林整備（間伐・路網, 初回）", "unit": "円/ha",
+                           "basis": "仮定（搬出間伐の事業費 数十万円/ha の目安）"},
+    "forest_mgmt_annual_yen_ha": {"value": 2.0e4, "label": "森林整備の継続（再間伐・保育, 年）", "unit": "円/ha/年",
+                                  "basis": "仮定（15年ごとの再間伐 30万円/ha を年当たりに換算）"},
     "crop_loss_yen_ha_yr": {"value": 0.3 * 4.75 * 187000, "label": "森林化による営農所得の逸失（年）", "unit": "円/ha/年",
                             "basis": "水稲 平年収量4.75 t/ha × 米価187千円/t（資産評価単価R7）× 所得率0.3（仮定）"},
     "relocate_yen_household": {"value": 2.0e7, "label": "移転（1世帯）", "unit": "円/世帯",
@@ -90,6 +94,10 @@ def estimate(edits_applied: list[dict], unit: dict | None = None) -> dict:
             ha = q["area_m2"] / 1e4
             init = ha * u["afforest_yen_ha"]
             annual = q["farm_area_m2"] / 1e4 * u["crop_loss_yen_ha_yr"]
+        elif t == "forest_mgmt":
+            ha = q["area_m2"] / 1e4
+            init = ha * u["forest_mgmt_yen_ha"]
+            annual = ha * u["forest_mgmt_annual_yen_ha"]
         elif t == "relocate":
             init = q["households"] * u["relocate_yen_household"] + q["employees"] * u["relocate_yen_employee"]
         elif t == "pump":

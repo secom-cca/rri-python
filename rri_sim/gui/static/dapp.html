@@ -43,13 +43,25 @@
     <div class="hint">カバー率＝不確実性のサンプル（LHS）のうち、観測に基づく適応経路で 目標（被害額・浸水人口）を全期間満たしたシナリオの割合。<b>発生確率ではない</b>。
       完全情報＝将来を知っている場合の比較用ベンチマーク。Lock-in（選択肢）＝施策なしから到達できる有用な組合せのうち、この初期施策を選ぶと到達できなくなる割合
       （不可逆な施策・土地利用・予算）。Lock-in（シナリオ）＝施策なしから始めれば完全情報で対応できたが、この初期施策からは対応できないシナリオの割合。</div></section>
+  <section class="card wide opt-card"><h2>拡張スコアカード（Performance・Cost・Robustness・Regret ＋ 将来の選択肢） <span id="o-score-x" class="hint"></span></h2>
+    <div style="overflow-x:auto"><table id="o-score" class="tbl"></table></div><div class="hint" id="o-score-note"></div></section>
+  <section class="card opt-card"><h2>Performance vs Remaining Future Options <span id="o-scatter-x"></span></h2>
+    <div class="ctl">縦軸 <select id="o-y"></select> 横軸 <select id="o-x"></select></div><div id="o-scatter"></div>
+    <div class="hint">点＝初期施策（クリックで選択）。右上ほど「性能が高く、選んだ後も選択肢が多く残る」。点の大きさ＝Lock-in。</div></section>
+  <section class="card opt-card"><h2>Option loss の原因別内訳 <select id="o-loss-year"></select> <span id="o-loss-x"></span></h2><div id="o-loss"></div>
+    <div class="hint">各初期施策の観測に基づく経路（全シナリオの平均）で、基準集合の選択肢が その年に 残っている／実施済み／どの理由で失われたか。</div></section>
+  <section class="card wide opt-card"><h2>2020–2100年の Performance・Cost・Remaining Future Options（選択した初期施策） <span id="o-series-x"></span></h2><div id="o-series"></div>
+    <div class="hint">実線＝選択した初期施策の経路（シナリオ平均、Remaining の帯＝10–90%）、破線＝施策なしから始めた経路。各意思決定（10年ごと）の直後の状態。</div></section>
   <section class="card"><h2>頑健性と柔軟性のトレードオフ 横軸 <select id="r-tx"></select></h2><canvas id="r-trade" height="260"></canvas>
     <div class="hint">縦軸＝カバー率（観測に基づく経路）。点の大きさ＝Lock-in（選択肢）、色＝最大 Regret。</div></section>
   <section class="card"><h2>選択した初期施策 <span id="r-sel" class="hint"></span></h2><div id="r-detail"></div></section>
   <section class="card wide"><h2>分岐型 Pathways Map <span class="hint">（行＝施策の組合せ、線の太さ＝シナリオ数、色＝目標の達成割合、○＝移行の着手、✕＝対応できない将来）</span></h2>
     <canvas id="r-map" height="420" style="width:100%"></canvas>
     <div class="hint">各シナリオで、観測（降雨・海面・浸水域の資産と人口・直前の期の被害）だけから移行先を決めた経路を重ねたもの。分岐の条件は下の表。</div>
-    <h2 style="margin-top:10px">分岐の条件（どの条件で、どの施策へ）</h2><div style="overflow-x:auto"><table id="r-branch" class="tbl"></table></div></section>
+    <h2 style="margin-top:10px">分岐の条件（どの条件で、どの施策へ）</h2><div style="overflow-x:auto"><table id="r-branch" class="tbl"></table></div>
+    <h2 style="margin-top:10px" class="opt-card">Option space が縮小した時点と理由 <span class="hint">（地図上の ▼＝その移行で選択肢が失われた枝、色＝主な理由、数字＝失われた選択肢の数（シナリオ平均））</span>
+      <span id="o-shrink-x"></span> <button id="o-map-png">地図を PNG で保存</button></h2>
+    <div style="overflow-x:auto" class="opt-card"><table id="o-shrink" class="tbl"></table></div></section>
   <section class="card"><h2>ATP（施策の組合せごとの目標の限界）</h2><canvas id="r-atp" height="300"></canvas>
     <div class="hint" id="r-atp-note"></div></section>
   <section class="card"><h2>シナリオ別の推移 <select id="r-scen"></select></h2><canvas id="r-series" height="300"></canvas>
@@ -63,36 +75,80 @@
   <section class="card wide"><h2>代表的な経路・分岐点の RRI による確認</h2><table id="r-ver" class="tbl"></table><div class="hint" id="r-ver-note"></div></section>
 </main>
 <main id="multi" hidden>
-  <section class="card wide" id="m-summary"></section>
-  <section class="card wide"><h2>主体別・流域全体の比較 <span class="hint">（行クリックで経路を表示する構成を選択）</span></h2>
-    <div style="overflow-x:auto"><table id="m-comp" class="tbl"></table></div>
-    <div class="hint">カバー率＝評価シナリオ（LHS の標本）のうち、その主体の目標を全期間（2030年〜）満たした割合。<b>発生確率ではない</b>。流域＝全主体の目標を同時に満たした割合。
-      Regret＝各主体の効用の、そのシナリオで比べたすべての構成（個別最適・流域最適・外生ルールの全組合せ）の最良との差。Lock-in＝2060年に、土地利用・不可逆性・予算で
-      実行できなくなった行動の割合。将来の選択肢＝2060年にまだ実行できる行動の割合。</div></section>
-  <section class="card wide" id="m-gap-card"><h2>Robustness Gap（個別最適と流域全体の最適の乖離）</h2><div id="m-gap"></div></section>
+  <section class="card wide"><h2>条件と比較結果 <span class="hint">（左の条件を変えて Recalculate → Individual・Joint・Single を再計算。右と下の表が結果）</span></h2>
+    <div style="display:grid;grid-template-columns:minmax(420px,5fr) 7fr;gap:14px;align-items:start">
+      <div id="m-inputs"></div>
+      <div id="m-summary"></div>
+    </div>
+    <h2 style="margin-top:12px">条件と結果の一覧 <span class="hint">（この実行と、その条件を変えた再計算。行クリックで表示を切り替え。規模が違う行は評価シナリオが違うので直接は比べない）</span></h2>
+    <div style="overflow-x:auto"><table id="m-history" class="tbl"></table></div></section>
+  <section class="card wide"><h2>3ケースの比較（Individual・Joint・Single） <span class="hint">（評価シナリオ: 探索に使っていないシナリオ）</span></h2>
+    <div style="overflow-x:auto"><table id="m-cases" class="tbl"></table></div>
+    <div class="hint">カバー率＝評価シナリオ（LHS の標本）のうち目標を全期間（2030年〜）満たした割合。<b>発生確率ではない</b>。
+      coordination gap＝Joint − Individual（調整の効果）、institutional fragmentation gap＝Single − Joint（権限と財政容量の分割による損失）。
+      Regret＝その主体（流域は流域の効用）の、そのシナリオで比べたすべての構成（3ケース・外生ルールの全組合せ）の最良との差。
+      Lock-in＝2060年に土地利用・不可逆性・予算で実行できなくなった行動の割合、選択肢＝2060年にまだ実行できる行動の割合（意思決定する主体の平均）。</div></section>
+  <section class="card wide"><h2>robustness と費用の前線（3ケース, 評価シナリオ）</h2><div style="position:relative;height:300px"><canvas id="m-frontier"></canvas></div>
+    <div class="hint" id="m-frontier-note"></div></section>
+  <section class="card wide"><h2>10年ごとの投資額と財政・実施容量 <select id="m-bud-case"></select>
+    <span class="hint">（棒＝着手した事業の初期費用（シナリオ平均）、細線＝90%値、横線＝per_decade_oku、▲＝容量不足で翌期へ繰越が生じた期: 大きさ＝そのシナリオの割合）</span></h2>
+    <div id="m-budget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px"></div>
+    <div class="hint" id="m-budget-note"></div></section>
   <section class="card wide"><h2>主体別 Pathways Map <select id="m-actor"></select> <select id="m-conf"></select>
     <span class="hint">（行＝個別施策の行動、線の太さ＝シナリオ数、色＝その主体の目標の達成割合、◆＝分岐: 厳しい経路 B への切替、灰色の帯＝着手時期の幅）</span></h2>
     <div id="m-strat"></div>
     <canvas id="m-map" height="360" style="width:100%"></canvas>
     <h2 style="margin-top:10px">分岐の条件（どの条件で、どの行動へ）</h2><div style="overflow-x:auto"><table id="m-branch" class="tbl"></table></div></section>
-  <section class="card wide"><h2>Joint Pathways Network <span class="hint">（列＝意思決定年、ノード＝流域全体の施策実施状態、線＝実際にたどった状態遷移、
-    線の色＝変更した主体、ノードの色＝全主体の目標の達成割合; 代表的な状態のみ）</span></h2>
+  <section class="card wide"><h2>Single（統合主体）の Pathways Map <span class="hint">（全施策・期別容量を1主体に統合; 色＝全主体の目標の達成割合）</span></h2>
+    <div id="m-sstrat"></div>
+    <canvas id="m-smap" height="360" style="width:100%"></canvas>
+    <h2 style="margin-top:10px">分岐の条件</h2><div style="overflow-x:auto"><table id="m-sbranch" class="tbl"></table></div></section>
+  <section class="card wide"><h2>Joint Pathways Network <select id="m-net-conf"></select> <span class="hint">（列＝意思決定年、ノード＝流域全体の施策実施状態、線＝実際にたどった状態遷移、
+    線の色＝変更した施策の権限をもつ主体、ノードの色＝全主体の目標の達成割合; 代表的な状態のみ）</span></h2>
     <canvas id="m-net" height="460" style="width:100%"></canvas><div id="m-net-legend" class="legend"></div>
     <div class="hint" id="m-net-note"></div></section>
+  <section class="card wide"><h2>全構成の比較（外生ルールの全組合せを含む）</h2>
+    <div style="overflow-x:auto"><table id="m-comp" class="tbl"></table></div></section>
   <section class="card"><h2>他主体の行動への依存 <select id="m-dep-actor"></select></h2><div style="overflow-x:auto"><table id="m-dep" class="tbl heat"></table></div>
-    <div class="hint">その主体の推奨戦略（個別最適）を固定し、他主体が外生ルールに従った場合のカバー率・初回の着手年。</div></section>
+    <div class="hint">その主体の推奨戦略（Individual）を固定し、他主体が外生ルールに従った場合のカバー率・初回の着手年。</div></section>
   <section class="card"><h2>施策の波及（他主体の施策が各主体の指標に与える影響）</h2><div style="overflow-x:auto"><table id="m-spill" class="tbl heat"></table></div>
     <div class="hint">各主体の 積極投資 の施策だけを実施したときの、各主体の指標 ÷ 目標（1 を超えると目標未達）。代理モデル・名目の効果係数。</div></section>
   <section class="card"><h2>分岐の判断材料: 観測した降雨の傾向の情報量</h2><canvas id="m-signal" height="220"></canvas>
     <div class="hint">各意思決定年に、観測した降雨倍率（誤差あり）の傾向から予測した2100年の降雨倍率の分布（10–90%）と、シナリオの真の2100年値との相関。
       相関が低い年の切替は雑音で起きるため、経路 B への切替は <code>strategy.switch_from_year</code> 以降に限る。</div></section>
-  <section class="card"><h2>戦略の探索（各主体: 他主体の行動を不確実性とした NSGA-II） <select id="m-front-actor"></select></h2><canvas id="m-front" height="260"></canvas>
-    <div class="hint">非劣な戦略（カバー率・平均費用・平均効用・Lock-in）。★＝推奨（最高カバー率から許容幅内で最も安い）。点の色＝平均 Regret。</div></section>
+  <section class="card"><h2>戦略の探索（非劣解） <select id="m-front-actor"></select></h2><canvas id="m-front" height="260"></canvas>
+    <div class="hint">非劣な戦略（カバー率・平均費用・平均効用・Lock-in; 探索シナリオ）。★＝推奨（最高カバー率から許容幅内で最も安い）。点の色＝平均 Regret。</div></section>
   <section class="card"><h2>シナリオ別の推移 <select id="m-scen"></select></h2><canvas id="m-series" height="260"></canvas>
-    <div class="hint">選択した構成での各主体の指標（実線＝個別最適、破線＝流域最適）。点線＝目標。</div></section>
-  <section class="card wide"><h2>目標を満たせない将来 <select id="m-unr"></select></h2><div id="m-prim"></div>
+    <div class="hint">各主体の指標 ÷ 目標（実線＝Individual、破線＝Joint、点線＝Single）。点線の横線＝目標。</div></section>
+  <section class="card"><h2>目標を満たせない将来 <select id="m-unr"></select></h2><div id="m-prim"></div>
     <div class="hint">PRIM: その主体（または全主体）の目標を満たせないシナリオが集まる範囲（密度＝範囲内の該当割合、カバー＝該当シナリオのうち範囲内の割合）。</div></section>
   <section class="card wide" id="m-ver-card"><h2>代表的な状態の RRI による確認</h2><table id="m-ver" class="tbl"></table></section>
+</main>
+<main id="adaptive" hidden>
+  <section class="card wide"><h2>感度分析: Target と Information Quality <span class="hint">（条件を変えて Recalculate → 表示がその結果に切り替わる。下の一覧と図で条件どうしを比べる）</span></h2>
+    <div style="display:grid;grid-template-columns:minmax(420px,5fr) 6fr;gap:14px;align-items:start">
+      <div id="a-inputs"></div>
+      <div><div class="ctl">横軸 <select id="a-sens-x"></select> <span id="a-sens-x-x"></span></div><div id="a-sens"></div>
+        <div class="hint">一度に1変数: 横軸の変数以外の条件と評価シナリオ数が表示中の実行と同じ行だけを描く（色＝モード; ルール固定の行は元の実行のルールをそのまま使う）。● 適応ルール・○ 11.9 方式（全初期行動の平均 Coverage）、◆ 推奨初期行動の適応ルール。</div></div></div>
+    <h2 style="margin-top:10px">条件と結果の一覧 <span class="hint">（行クリックで表示を切り替え）</span> <span id="a-hist-x"></span></h2>
+    <div style="overflow-x:auto"><table id="a-hist" class="tbl"></table></div></section>
+  <section class="card wide" id="a-summary"></section>
+  <section class="card wide"><h2>初期行動の比較（各初期行動の最良の適応ルール, 多目的 Pareto） <span id="a-table-x"></span></h2>
+    <div style="overflow-x:auto"><table id="a-table" class="tbl"></table></div>
+    <div class="hint">各初期行動（11.9 と同じ初期施策）について、その後の適応ルールを探索シナリオで NSGA-II により探索し、推奨ルールを評価シナリオ（11.9 と同じ）で評価した。
+      ★＝Pareto（Coverage・平均費用・最大 Regret・残る選択肢で非劣）、◎＝推奨（Pareto のうち最高 Coverage から許容幅内で最も安い）。右側は同じ初期施策からの 11.9 方式（Pareto 組合せ間の移行）の経路。
+      Regret＝両方式・全初期行動のうち、そのシナリオの最良の効用との差。残る選択肢＝11.9.5 と同じ定義（経路網を使わない判定: 両方式で同じ）。Coverage は LHS の標本の割合で、発生確率ではない。</div></section>
+  <section class="card"><h2>Coverage と残る将来の選択肢（適応ルール ● vs 11.9 ○） <span id="a-scatter-x"></span></h2><div id="a-scatter"></div>
+    <div class="hint">線＝同じ初期行動の 11.9 方式 → 適応ルール。右上ほど頑健で、選んだ後も選択肢が残る。点をクリックで選択。</div></section>
+  <section class="card"><h2>選択した初期行動の意思決定ルール <span id="a-sel" class="hint"></span></h2><div id="a-rule"></div></section>
+  <section class="card wide"><h2>Adaptive Pathways Map <span class="hint">（行＝個別施策の行動、線の太さ＝シナリオ数、色＝目標の達成割合、灰色の帯＝着手時期の幅。経路と分岐の数は固定せず、観測から生じる; 3% 未満の枝は省略）</span>
+    <button id="a-map-png">PNG</button></h2>
+    <canvas id="a-map" height="360" style="width:100%"></canvas>
+    <h2 style="margin-top:10px">分岐の条件（どの指標が、どの値で、どの行動を引いたか）</h2><div style="overflow-x:auto"><table id="a-branch" class="tbl"></table></div></section>
+  <section class="card wide"><h2>2020–2100年の Performance・Cost・Remaining Future Options（適応ルール 実線 vs 11.9 破線） <span id="a-series-x"></span></h2><div id="a-series"></div></section>
+  <section class="card"><h2>ルールの探索（選択した初期行動、探索シナリオ） <span id="a-front-x"></span></h2><div id="a-front"></div>
+    <div class="hint">非劣なルール（Coverage・費用・効用・残る選択肢）。★＝推奨。色＝残る選択肢。</div></section>
+  <section class="card"><h2>Option loss の原因（選択した初期行動, 2050年と 2090年）</h2><table id="a-loss" class="tbl"></table></section>
 </main>
 <script type="module" src="/static/dapp.js"></script>
 </body>

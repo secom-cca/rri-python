@@ -38,7 +38,7 @@ docs/             00 セットアップ / 01 定式化 / 02 データと計画 /
 .venv/bin/python -m rri_sim.gui      # → http://127.0.0.1:8765        （専門家向け: すべての設定）
                                      #   http://127.0.0.1:8765/play   （授業向けゲーム: 予算・ミッション・スコア）
                                      #   http://127.0.0.1:8765/rdm    （RDM・感度分析: scripts/run_rdm.py / run_sensitivity.py, docs/09, 10）
-                                     #   http://127.0.0.1:8765/dapp   （適応経路 DAPP・Robust DAPP・Multi-Actor: scripts/run_dapp.py [--robust|--multi], docs/11）
+                                     #   http://127.0.0.1:8765/dapp   （適応経路 DAPP・Robust DAPP・Multi-Actor・Adaptive: scripts/run_dapp.py [--robust|--multi|--adaptive], docs/11）
                                      #   http://127.0.0.1:8765/explore（施策の探索・重みなし: scripts/run_explore.py, docs/12）
                                      #   http://127.0.0.1:8765/roadmap（適応ロードマップ P0〜P3: scripts/run_roadmap.py, docs/13）
 ```

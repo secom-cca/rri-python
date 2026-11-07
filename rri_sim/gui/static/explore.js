@@ -85,14 +85,24 @@ function refresh() {
 }
 
 // ---- trade spaces: axes, actor combinations, 2-D Pareto front
+// sub-indicators (results of older runs lack them: NaN)
+const SUB = {
+  relocated_households: ['移転世帯', '移転世帯 平均', -1], relocated_population: ['移転人口', '移転人口 平均 [人]', -1],
+  service_access: ['サービスアクセス', 'サービスアクセス（4サービス平均, 0–1）', 1],
+  natural_habitat_km2: ['自然生息地', '自然生息地面積 [km²]', 1], habitat_connectivity: ['生息地の連結性', '生息地の連結性（陸域, 0–1）', 1],
+};
+const subRows = (p, p0) => (p.sub && Object.keys(p.sub).length ? Object.entries(SUB).filter(([k]) => p.sub[k] != null)
+  .map(([k, [, label]]) => `<tr><td>${label}</td><td>${fmt(p.sub[k], 2)}</td><td>${fmt(p0.sub?.[k], 2)}</td></tr>`).join('') : '');
 const AX = {
   cost: { short: '費用', label: '費用 [億円, 現在価値]', dir: -1, pol: (p) => p.cost, pt: (j) => SC.points.cost[j] },
   rel: { short: '達成率', label: '達成率 [%]', dir: 1, pol: (p) => 100 * p._rel, pt: (j) => 100 * relAt(j) },
   dmean: { short: '被害額 平均', label: '被害額 平均 [億円]', dir: -1, pol: (p) => p.damage.mean, pt: (j) => SC.points.damage_mean[j] },
   dp90: { short: '被害額 90%値', label: '被害額 90%値 [億円]', dir: -1, pol: (p) => p.damage.p90, pt: (j) => SC.points.damage_p90[j] },
   pop: { short: '浸水人口', label: '浸水人口（0.5 m以上）平均 [人]', dir: -1, pol: (p) => p.pop_hazard.mean, pt: (j) => SC.points.pop[j] },
-  liv: { short: 'Livability', label: 'Livability', dir: 1, pol: (p) => p.livability, pt: (j) => SC.points.livability[j] },
-  eco: { short: 'Ecology', label: 'Ecology', dir: 1, pol: (p) => p.ecology, pt: (j) => SC.points.ecology[j] },
+  ...Object.fromEntries(Object.entries(SUB).map(([k, [short, label, dir]]) => [k, { short, label, dir,
+    pol: (p) => p.sub?.[k] ?? NaN, pt: (j) => SC.points[k]?.[j] ?? NaN }])),
+  liv: { short: 'Livability（補助）', label: 'Livability（補助指標）', dir: 1, pol: (p) => p.livability, pt: (j) => SC.points.livability[j] },
+  eco: { short: 'Ecology（補助）', label: 'Ecology（補助指標）', dir: 1, pol: (p) => p.ecology, pt: (j) => SC.points.ecology[j] },
 };
 function relIdx() {
   const t = +$('tgt').value, ti = SC.target_curve.findIndex((x) => Math.abs(x - t) < 1e-9), v = $('rain').value;
@@ -126,7 +136,7 @@ function mchips() {
 function chips() {
   shown.clear();
   if (!SC) { $('sc-chips').innerHTML = '<span class="hint">実施主体別のトレードスペースは未計算です（<code>python scripts/run_explore.py --scopes 実行名</code>）。探索の Pareto 解のみ表示します。</span>'; $('show-pol').checked = true; return; }
-  const A = SC.actors, bit = (a) => 1 << A.indexOf(a), loc = A.filter((a) => a.startsWith('自治体'));
+  const A = SC.actors, bit = (a) => 1 << A.indexOf(a), loc = A.filter((a) => a.includes('自治体'));
   const kuni = A.includes('国') ? bit('国') : 0;
   [kuni, ...loc.map((a) => kuni | bit(a)), kuni | loc.reduce((m, a) => m | bit(a), 0), (1 << A.length) - 1]
     .filter((m) => m && SC.scopes.some((s) => s.mask === m)).forEach((m) => shown.add(m));
@@ -285,8 +295,9 @@ function select(i) {
     <tr><td>費用の幅（事業費係数）</td><td>${fmt(p.cost_range[0])}–${fmt(p.cost_range[1])}</td><td>0</td></tr>
     <tr><td>浸水人口（0.5 m以上） 平均／90%値</td><td>${fmt(p.pop_hazard.mean)}／${fmt(p.pop_hazard.p90)}</td><td>${fmt(p0.pop_hazard.mean)}／${fmt(p0.pop_hazard.p90)}</td></tr>
     <tr><td>床上浸水世帯 平均</td><td>${fmt(p.households)}</td><td>${fmt(p0.households)}</td></tr>
-    <tr><td>Livability</td><td>${fmt(p.livability, 2)}</td><td>${fmt(p0.livability, 2)}</td></tr>
-    <tr><td>Ecology</td><td>${fmt(p.ecology, 2)}</td><td>${fmt(p0.ecology, 2)}</td></tr></table>
+    ${subRows(p, p0)}
+    <tr><td>Livability（補助指標）</td><td>${fmt(p.livability, 2)}</td><td>${fmt(p0.livability, 2)}</td></tr>
+    <tr><td>Ecology（補助指標）</td><td>${fmt(p.ecology, 2)}</td><td>${fmt(p0.ecology, 2)}</td></tr></table>
     <div class="hint">被害額は資産額係数込み。*地域の達成率は目標倍率 ${R.reference.target_ratio}（設定値）で、その地域の基準と比べた割合。</div>`;
   const e = R.rain_edges, labels = e.slice(0, -1).map((a, b) => `${a.toFixed(2)}–${e[b + 1].toFixed(2)}`);
   const byBin = (q) => labels.map((_, b) => { const m = R.ensemble.rain_factor.map((x) => x >= e[b] && (x < e[b + 1] || b === e.length - 2)); return 100 * rel(q, t, m); });

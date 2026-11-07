@@ -56,6 +56,7 @@
       <h2>施策</h2>
       <div class="tools measures" id="tools">
         <button data-tool="forest" title="土地利用を森林に変更">🌲 森林化</button>
+        <button data-tool="forest_mgmt" title="既存森林の整備（間伐等）: 土壌の保水力を改善">🪓 森林整備</button>
         <button data-tool="paddy_dam" title="水田セルに田んぼダム（排水調整板）を設置">🌾 田んぼダム</button>
         <button data-tool="relocate" title="住宅・事業所を浸水域外の安全な市街地へ移転">🏠 移転</button>
         <button data-tool="raise" title="住宅の嵩上げ（床高）／盛土">⬆ 嵩上げ</button>
@@ -69,6 +70,10 @@
         <div data-for="forest"><label>新規森林の粗度 n <input id="fo-n" type="number" value="0.4" step="0.05" min="0.05" max="1"></label>
           <label>森林土層厚 <input id="fo-soil" type="number" value="1.0" step="0.1" min="0.2" max="3"> m</label>
           <div class="hint">既存の森林・水域は対象外。校正済み山地森林とは別クラスとして計算。</div></div>
+        <div data-for="forest_mgmt"><label>土壌貯留の改善 <input id="fm-gain" type="number" value="20" step="5" min="0" max="100"> %（d<sub>a</sub>, d<sub>m</sub> の増分）</label>
+          <label>実施主体 <select id="fm-owner"><option value="other">民有林等（県・市町村・森林所有者）</option>
+            <option value="national">国有林（林野庁＝国）</option></select></label>
+          <div class="hint">既存森林のみ対象。校正済み森林の土層厚・透水係数はそのまま、有効間隙率（d<sub>a</sub> = 土層厚 × γ<sub>a</sub>、d<sub>m</sub>）を増やす。改善量は不確実（探索では効果係数 0〜1 で扱う）。</div></div>
         <div data-for="paddy_dam"><label>貯留深 <input id="pd-store" type="number" value="15" step="1" min="1" max="30"> cm</label>
           <label>最大放流量 <input id="pd-rel" type="number" value="5" step="0.5" min="0.5" max="50"> mm/h</label></div>
         <div data-for="relocate"><label>移転先 <select id="rl-dest">
@@ -165,9 +170,11 @@
       <div id="unit-costs" class="unit-costs"></div>
     </section>
     <section data-panel="indic" class="panel">
-      <h2>Livability Score（生活利便性）</h2>
+      <h2>副指標</h2>
+      <div id="sub"></div>
+      <h2>Livability Score（生活利便性・補助指標）</h2>
       <div id="liv"></div>
-      <h2>Ecology Score（生態系）</h2>
+      <h2>Ecology Score（生態系・補助指標）</h2>
       <div id="eco"></div>
       <h2>安全・安心（参考）</h2>
       <div id="safety"></div>

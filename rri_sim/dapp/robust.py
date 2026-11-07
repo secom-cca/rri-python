@@ -41,6 +41,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from . import config as CF
+from . import option_space as OS
 from .landuse import Transitions
 from ..data import PROCESSED
 from ..rdm import explore as EX
@@ -413,8 +414,9 @@ class Pathway:
                 "expected": round(float(score[j]), 4) if np.isfinite(score[j]) else None, "insufficient": bool(not good[j]), "cost": round(float(M["initial"][c, y]), 1)}
 
 
-def simulate(net, inits, scen, oracle=False, trig=None, targets=None):
-    """All initial nodes x scenarios in lock step (one surrogate batch per decision)."""
+def simulate(net, inits, scen, oracle=False, trig=None, targets=None, hook=None):
+    """All initial nodes x scenarios in lock step (one surrogate batch per decision).  hook(when, t, state, controller)
+    is called before ("pre") and after ("post") every decision (option_space.Recorder)."""
     rc, phys = net.rc, net.phys
     states, ctrls = [], []
     for i in inits:
@@ -427,8 +429,12 @@ def simulate(net, inits, scen, oracle=False, trig=None, targets=None):
     for t in SM.decision_years(rc):
         for st, c in zip(states, ctrls):
             st.settle(t)
+            if hook:
+                hook("pre", t, st, c)
             c.decide(t, st, SM.observe(st, t, net.ref, rc))
             st.process(t)
+            if hook:
+                hook("post", t, st, c)
             st.add_periods(t, t + net.step)
         SM.evaluate(states, phys)
         for st in states:
@@ -442,7 +448,10 @@ def record(net, st, ctrl, targets=None):
     sc = SM.score(st, net.rc, ref, [[net.y0, "robust"]])
     viol = [p["t"] for p in st.periods if p["t"] >= tg["from_year"]
             and (p["damage"] / ref["damage"] > tg["damage_ratio"] or p["pop_risk"] / ref["pop_hazard"] > tg["pop_ratio"])]
-    return {"init": ctrl.init, "s": ctrl.s, "met": not viol, "first_violation": viol[0] if viol else None, "U": sc["U"],
+    df = SM.discount(net.rc, np.arange(st.y0, st.y1))
+    cum = np.cumsum(df * (st.capital + st.maint + st.coord))                # cumulative cost PV to the end of each decade
+    cost_path = [round(float(cum[min(t + net.step, st.y1) - st.y0 - 1]), 1) for t in SM.decision_years(net.rc)]
+    return {"init": ctrl.init, "s": ctrl.s, "met": not viol, "first_violation": viol[0] if viol else None, "U": sc["U"], "cost_path": cost_path,
             "cost_pv": sc["cost_pv"], "ead_pv": sc["ead_pv"], "spent": st.spent, "final": ctrl.cur, "events": ctrl.events,
             "deferred": sum(1 for e in st.log if e["event"] == "deferred"),
             "series": [[p["t"], round(p["damage"] / ref["damage"], 3), round(p["pop_risk"] / ref["pop_hazard"], 3)] for p in st.periods]}
@@ -543,7 +552,10 @@ def evaluate(net, inits, scen, trig=None, targets=None, F=None, Z=None, vary=Non
     t0 = time.time()
     R = net.R
     tg = targets or R["targets"]
-    sa, ca = simulate(net, inits, scen, False, trig, tg)
+    space = getattr(net, "option_space", None) or OS.OptionSpace(net)
+    net.option_space = space
+    rec = OS.Recorder(space)
+    sa, ca = simulate(net, inits, scen, False, trig, tg, hook=rec)
     so, co = simulate(net, inits, scen, True, trig, tg)
     A = [record(net, s, c, tg) for s, c in zip(sa, ca)]
     O = [record(net, s, c, tg) for s, c in zip(so, co)]
@@ -576,9 +588,17 @@ def evaluate(net, inits, scen, trig=None, targets=None, F=None, Z=None, vary=Non
     for j in prom:
         rows[j]["promising"] = True
     trees = {str(i): pathway_tree(net, A[k * nS:(k + 1) * nS]) for k, i in enumerate(inits)}
+    opt = OS.summarise(space, rec, ca, A, SM.decision_years(net.rc), trees, inits, nS)
+    for r in rows:                                          # extended scorecard: future options and transition feasibility
+        o = opt["inits"][str(r["node"])]
+        r["remaining_options_2050"] = o["checkpoints"].get("2050", {}).get("remaining")
+        r["remaining_options_mean"] = o["remaining_mean"]
+        r["option_loss_2050"] = o["checkpoints"].get("2050", {}).get("loss_total")
+        r["transition_feasibility"] = o["transition_feasibility"]
+        r["mean_damage_ratio"] = float(np.nanmean(o["timeseries"]["damage_ratio"][1:]))
     unc = {"adaptive": ~met.any(0), "perfect": ~meto.any(0)}
     out = {"inits": inits, "scenarios": list(map(int, scen)), "table": rows, "promising": [inits[j] for j in prom],
-           "trees": trees, "regret": reg.tolist(), "met": met.astype(int).tolist(), "met_perfect": meto.astype(int).tolist(),
+           "trees": trees, "option_space": opt, "regret": reg.tolist(), "met": met.astype(int).tolist(), "met_perfect": meto.astype(int).tolist(),
            "uncovered": {k: v.astype(int).tolist() for k, v in unc.items()},
            "records": {"adaptive": [_slim(r) for r in A], "perfect": [_slim(r) for r in O]}, "elapsed_s": time.time() - t0}
     if F is not None:
@@ -594,7 +614,7 @@ def evaluate(net, inits, scen, trig=None, targets=None, F=None, Z=None, vary=Non
 
 
 def _slim(r):
-    return {k: r[k] for k in ("init", "s", "met", "first_violation", "U", "cost_pv", "ead_pv", "final", "events", "deferred", "series")}
+    return {k: r[k] for k in ("init", "s", "met", "first_violation", "U", "cost_pv", "ead_pv", "final", "events", "deferred", "series", "cost_path")}
 
 
 # ------------------------------------------------------------------ pipeline
@@ -679,6 +699,7 @@ def run(cfg=None, out_dir=None, phys=None, log=print):
     np.savez_compressed(out / "network.npz", nodes=np.array(nodes, int), **net.tables())
     res["elapsed_s"] = time.time() - t0
     (out / "results.json").write_text(json.dumps(res, ensure_ascii=False, default=RR._json), encoding="utf-8")
+    OS.export(out / "option_space", ev, {str(i): node_info(net, i)["label"] for i in inits})
     log(f"完了: {out / 'results.json'}（{res['elapsed_s']:.0f} s）")
     return res
 

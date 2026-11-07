@@ -38,7 +38,9 @@ def setup_rri(cfg, cache_path, log=print):
     log("対策なし（現在気候）を計算中")
     base = s.run(cfg["event"])
     zm = CA.zone_masks(s.d, s.meta, cfg["zones"])
-    variables = CA.build(s.d, s.meta, s.hand, s.assets, s.class_names, base["_depth"], cfg, base.get("_river_hmax"))
+    fm = cfg["candidates"].get("forest_mgmt")
+    nat = s.national_forest() if fm is not None and fm.get("split_owner", True) else None
+    variables = CA.build(s.d, s.meta, s.hand, s.assets, s.class_names, base["_depth"], cfg, base.get("_river_hmax"), nat)
     ev = RRIEvaluator(s, cfg, variables, zm, cache_path, log)
     d, r = s.d, s.d.river
     zone_id = np.zeros(d.shape, np.uint8)
@@ -75,9 +77,9 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
         c = ev.cost(x)
         viol = max(0.0, c["total"] - budget)
         if viol > 0:
-            return [1e12, c["total"], 0.0, 0.0], viol
+            return [1e12, c["total"]], viol
         m = ev.simulate(x, nominal)
-        return [m["damage"], c["total"], -m["livability"], -m["ecology"]], 0.0
+        return [m["damage"], c["total"]], 0.0         # Livability / Ecology: auxiliary, not optimised
 
     def repair(x):
         x = np.array(x, int)

@@ -271,7 +271,7 @@ def options(ctx, actor, st, t):
     T = ctx.T
     g = [int(np.argmin([abs(st.committed[i] - lv) for lv in T.levels[i]])) for i in range(len(T.V))]
     out = dict.fromkeys(("feasible", "done", "land", "irreversible", "budget"), 0)
-    left = {a: b["total_oku"] - st.spent_by.get(a, 0.0) for a, b in ctx.budgets.items()}
+    left = {a: (np.inf if b.get("total_oku") is None else b["total_oku"] - st.spent_by.get(a, 0.0)) for a, b in ctx.budgets.items()}
     for i, li in actor.catalog:
         if li == 0:
             if g[i] == 0:

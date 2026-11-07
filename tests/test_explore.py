@@ -74,7 +74,7 @@ def test_trade_spaces_by_actor(tmp_path):
     EX.run(cfg, tmp_path, evaluator=FakeEvaluator(), log=lambda *a: None)
     doc = ES.run("fake", {"explore": {"scopes": {"optimisation": {"pop": 10, "gens": 3}, "max_points": 60}}},
                  log=lambda *a: None, out_dir=tmp_path)
-    assert doc["actors"] == ["国", "自治体・下流", "地域"]          # 住宅対策 is municipal and zonal
+    assert doc["actors"] == ["国", "下流自治体", "地域主体"]        # 住宅対策 is municipal: 下流 zone -> 下流自治体
     assert len(doc["scopes"]) == 7
     P = doc["points"]
     rel = np.frombuffer(__import__("base64").b64decode(P["rel"]), np.uint8).reshape(P["n"], *P["rel_shape"])
@@ -114,3 +114,70 @@ def test_rdm_on_the_surrogate(tmp_path):
     a = saved["archive"][P[0]["archive"]]
     assert a["cost"] == 0 and abs(a["damage"] - 700) < 70                      # no measures, nominal scenario ~ RRI reference
     assert set(saved["sobol"]) == {"被害額（総合推奨案）", "Regret・国（国の推奨案）", "Regret・下流自治体（下流自治体の推奨案）"}
+
+
+class SplitEvaluator(FakeEvaluator):
+    """Housing as separate 移転 / 嵩上げ variables (same cells), 森林整備 as a rate, a jointly implemented
+    農業用排水機場; the RRI-side cost of raising is zero while the same homes are relocated."""
+
+    def __init__(self):
+        self.variables = [
+            CA.Variable("堤防・下流", "levee", "下流", ["なし", "+1 m", "+2 m"], [1], [None, {"height": 1.0}, {"height": 2.0}]),
+            CA.Variable("移転・下流", "relocate", "下流", ["なし", "移転"], [3, 4], [None, {"type": "relocate", "dest": "new"}]),
+            CA.Variable("嵩上げ・下流", "raise", "下流", ["なし", "+1 m"], [3, 4], [None, {"type": "raise", "height": 1.0}]),
+            CA.Variable("森林整備（民有林等）・上流", "forest_mgmt", "上流", ["なし", "全域"], list(range(30, 40)),
+                        [None, {"type": "forest_mgmt", "owner": "other"}]),
+            CA.Variable("排水機場（農業）・上流", "pump_agri", "上流", ["なし", "+3 mm/h"], [5], [None, {"type": "pump"}]),
+        ]
+        self.n_sim = 0
+
+    def cost(self, x):
+        reloc = int(x[1]) > 0
+        c = {"上流": 100 * float(x[3]) + 200 * int(x[4]),
+             "下流": [0, 300, 700][int(x[0])] + 800 * reloc + (0 if reloc else 150 * int(x[2]))}
+        return {"total": sum(c.values()), "by_zone": c, "by_type": {}}
+
+    def simulate(self, x, sim, strict=True):
+        self.n_sim += 1
+        k = sim.get("rain_factor", 1.0) ** 3
+        reloc, raised = int(x[1]) > 0, int(x[2]) > 0 and int(x[1]) == 0
+        up = 200 * k * (1 - 0.2 * float(x[3]) * sim.get("forest_mgmt_effect", 1.0)) * (1 - 0.2 * int(x[4]))
+        down = 500 * k * (1 - 0.2 * int(x[0]) * sim.get("levee_effect", 1.0)) * (1 - 0.5 * reloc) * (1 - 0.3 * raised * sim.get("raise_effect", 1.0))
+        return {"damage": up + down, "damage_zone": {"上流": up, "下流": down}, "households": 3 * (up + down),
+                "livability": 60.0, "ecology": 60.0, "pop_hazard": 5 * (up + down), "inundated_km2": 1.0, "peak_q": 1.0,
+                "relocated_households": 40.0 * reloc, "relocated_population": 100.0 * reloc, "service_access": 0.7 - 0.01 * reloc,
+                "natural_habitat_km2": 50.0, "habitat_connectivity": 0.4 + 0.01 * float(x[3])}
+
+
+def test_split_housing_forest_management_and_shared_actors(tmp_path):
+    from rri_sim.rdm import explore_scope as ES
+    V = SplitEvaluator().variables
+    assert CA.superseded_raise(V) == [(1, 2)]
+    V[3].continuous = True
+    e = CA.edits(V, [0, 1, 1, 0.5, 0], {"forest_mgmt_effect": 0.5})
+    assert [x["type"] for x in e] == ["relocate", "raise", "forest_mgmt"] and len(e[2]["cells"]) == 5   # relocation first
+    cfg = CF.load({"explore": {"design": {"n_train": 40, "n_none": 4, "n_val": 8, "adaptive_rounds": 0, "pool": 100},
+                               "ensemble": {"n": 64}, "optimisation": {"pop": 12, "gens": 4},
+                               "verify": {"n_policies": 2, "n_scenarios": 2}}})
+    assert cfg["explore"]["optimisation"]["objectives"] == ["cost", "damage_mean", "reliability"]
+    res = EX.run(cfg, tmp_path, evaluator=SplitEvaluator(), log=lambda *a: None)
+    assert [v["continuous"] for v in res["variables"]] == [False, False, False, True, False]
+    for p in res["policies"]:
+        assert abs(p["cost"] - SplitEvaluator().cost(p["x"])["total"]) < 1e-6      # raise not paid when relocated
+        assert set(p["sub"]) == set(EX.SUB_KEYS)
+    assert res["reference"]["sub"]["relocated_households"] == 0.0
+    doc = ES.run("fake", {"explore": {"scopes": {"optimisation": {"pop": 10, "gens": 3}, "max_points": 60}}},
+                 log=lambda *a: None, out_dir=tmp_path)
+    A = doc["actors"]
+    assert A == ["国", "上流自治体", "下流自治体", "地域主体"]
+    assert doc["actor_shares"][4] == {"国": 0.6, "上流自治体": 0.25, "地域主体": 0.15}   # 排水機場: joint
+    assert doc["actor_shares"][3] == {"国": 0.3, "上流自治体": 0.4, "地域主体": 0.3}     # 民有林の森林整備: joint
+    P = doc["points"]
+    for x, need, cost, ca in zip(P["x"], P["need"], P["cost"], P["cost_actor"]):
+        bits = 0
+        for i, a in enumerate(x):
+            if a > 0:
+                bits |= sum(1 << A.index(n) for n in doc["actor_shares"][i])
+        assert need == bits                                                  # a joint measure needs all its actors
+        assert abs(sum(ca) - cost) < 0.5 and abs(cost - SplitEvaluator().cost(x)["total"]) < 0.5
+    assert "relocated_households" in P and "habitat_connectivity" in P

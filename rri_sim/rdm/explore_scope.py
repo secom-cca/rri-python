@@ -1,10 +1,13 @@
-"""Trade spaces by implementing actor (国 / 自治体（地域別） / 地域) on the exploration surrogate.
+"""Trade spaces by implementing actor (国 / 上流自治体 / 下流自治体 / 地域主体) on the exploration surrogate.
 
     python scripts/run_explore.py --scopes abukuma_explore_v2
 
-Every decision variable belongs to one actor (`explore.scopes.actors`: measure type -> 国 / 自治体 /
-地域; actors listed in `zonal` are split by zone, e.g. 自治体・上流).  For every non-empty combination
-of actors a mixed NSGA-II runs on the surrogate with the other actors' measures fixed at 0.  Every
+Every decision variable belongs to an actor (`explore.scopes.actors`: measure type -> 国 / 自治体 /
+地域主体; `zonal` maps 自治体 to the municipalities of the variable's zone, e.g. 上流 -> 上流自治体; a
+list form appends the zone, 自治体・上流) or to several actors jointly ({actor: cost share}, e.g. 農業用
+排水機場 or 民有林の森林整備): a joint variable needs all of them and its cost is split by share.  For
+every non-empty combination of actors a mixed NSGA-II runs on the surrogate with the measures outside
+the combination fixed at 0.  Every
 evaluated policy is kept with the set of actors it needs, so the trade space of a combination is all
 policies whose actors are in it (including those found for smaller combinations and the exploration's
 own archive).  No RRI runs: the surrogate is refit from the stored design (cached) and the costs come
@@ -24,22 +27,48 @@ import numpy as np
 
 from . import config as CF
 from .explore import EXPLORE_DIR, Space, nsga_mixed, space_from_results, surrogate_from_results
+from .candidates import superseded_raise
 from .evaluate import xkey
 from .sensitivity import GP
 
 ANNUITY = (1 - 1.04 ** -50) / 0.04      # 治水経済調査マニュアル: 50 years at 4 % (costs.py)
 KEYS = ("damage", "pop_hazard", "households", "livability", "ecology")
+SUB_KEYS = ("relocated_households", "relocated_population", "service_access", "natural_habitat_km2", "habitat_connectivity")
+
+
+def shares_of(variables, sc):
+    """{actor: cost share} per variable (zonal actors resolved by the variable's zone) and the ordered actor list."""
+    zonal = sc.get("zonal", ())
+
+    def name(a, z):
+        if isinstance(zonal, dict) and a in zonal:
+            return zonal[a].get(z, f"{a}・{z}")
+        return f"{a}・{z}" if a in zonal else a
+    out = []
+    for v in variables:
+        a = sc["actors"].get(v["type"], "地域主体")
+        sh = {a: 1.0} if isinstance(a, str) else {k: float(w) for k, w in a.items()}
+        tot = sum(sh.values()) or 1.0
+        res = {}
+        for k, w in sh.items():
+            n = name(k, v["zone"])
+            res[n] = res.get(n, 0.0) + w / tot
+        out.append(res)
+    base = []
+    for a in sc["actors"].values():
+        base += [a] if isinstance(a, str) else list(a)
+    base = list(dict.fromkeys(base))
+    root = lambda a: next((k for k, m in zonal.items() if a in m.values()), a.split("・")[0]) if isinstance(zonal, dict) \
+        else a.split("・")[0]  # noqa: E731
+    seen = list(dict.fromkeys(n for sh in out for n in sh))
+    order = sorted(seen, key=lambda a: (base.index(root(a)) if root(a) in base else 99, a))
+    return out, order
 
 
 def actors_of(variables, sc):
-    """Actor label per variable (zonal actors get the zone appended) and the ordered actor list."""
-    out = []
-    for v in variables:
-        a = sc["actors"].get(v["type"], "地域")
-        out.append(f"{a}・{v['zone']}" if a in sc.get("zonal", ()) else a)
-    base = list(dict.fromkeys(sc["actors"].values()))
-    order = sorted(dict.fromkeys(out), key=lambda a: (base.index(a.split("・")[0]) if a.split("・")[0] in base else 99, a))
-    return out, order
+    """Lead actor per variable (largest cost share) and the ordered actor list."""
+    sh, order = shares_of(variables, sc)
+    return [max(s, key=s.get) for s in sh], order
 
 
 def cost_rows(res):
@@ -85,12 +114,15 @@ def run(name, cfg=None, log=print, out_dir=None):
     V = res["variables"]
     nV = len(V)
     zones = res["zones"]
-    S = surrogate_from_results(res, KEYS + tuple("dz:" + z for z in zones),
+    S = surrogate_from_results(res, tuple(k for k in KEYS + SUB_KEYS if k in res["design"]["y"][0]) + tuple("dz:" + z for z in zones),
                                [out, EXPLORE_DIR.parent / "roadmap" / "_physics" / name], log)
     costs = cost_rows(res)
-    actor, actors = actors_of(V, sc)
-    amask = np.array([1 << actors.index(a) for a in actor])
-    log(f"実施主体: {actors}（{', '.join(f'{a} {sum(x == a for x in actor)} 変数' for a in actors)}）")
+    shares, actors = shares_of(V, sc)
+    actor = [max(s_, key=s_.get) for s_ in shares]
+    amask = np.array([sum(1 << actors.index(a) for a in s_) for s_ in shares])
+    log(f"実施主体: {actors}（{', '.join(f'{a} {sum(a in x for x in shares)} 変数' for a in actors)}; "
+        f"共同: {[v['name'] for v, x in zip(V, shares) if len(x) > 1]}）")
+    keys = tuple(k for k in KEYS + SUB_KEYS if k in res["design"]["y"][0])     # older designs lack the sub-indicators
 
     E = {k: np.array(v, float) for k, v in res["ensemble"].items()}
     ne = len(next(iter(E.values())))
@@ -107,7 +139,7 @@ def run(name, cfg=None, log=print, out_dir=None):
         U = {k: np.tile(v, len(xs)) for k, v in E.items()}
         Fe = sp.features(X, U)
         P = {}
-        for k in KEYS:
+        for k in keys:
             t = _gp_mean(S.models[k], Fe)
             P[k] = (np.maximum(np.expm1(t), 0) if S._is_log(k) else t).reshape(len(xs), ne)
         ratio = P["damage"] / D_ref
@@ -116,12 +148,18 @@ def run(name, cfg=None, log=print, out_dir=None):
         d = P["damage"] * af
         cv = np.array([[float(np.interp(x[i], *costs[i])) if V[i]["continuous"] else float(costs[i][1][int(x[i])])
                         for i in range(nV)] for x in xs])
+        for i, j in superseded_raise(V):                         # relocation active -> raising costs nothing
+            cv[:, j] *= np.array([float(x[i]) == 0 for x in xs])
         return {"cost_var": cv, "cost": cv.sum(1), "rel": rel, "damage_mean": d.mean(1), "damage_p90": np.quantile(d, 0.9, axis=1),
                 "pop": P["pop_hazard"].mean(1), "households": P["households"].mean(1),
-                "livability": P["livability"].mean(1), "ecology": P["ecology"].mean(1)}
+                "livability": P["livability"].mean(1), "ecology": P["ecology"].mean(1),
+                **{k: P[k].mean(1) for k in SUB_KEYS if k in P}}
 
     obj = sc["optimisation"]["objectives"]
-    sign = {"cost": 1, "reliability": -1, "damage_mean": 1, "damage_p90": 1, "pop": 1, "ecology": -1, "livability": -1}
+    sign = {"cost": 1, "reliability": -1, "damage_mean": 1, "damage_p90": 1, "pop": 1, "ecology": -1, "livability": -1,
+            "relocated_households": 1, "relocated_population": 1, "service_access": -1, "natural_habitat_km2": -1,
+            "habitat_connectivity": -1}
+    okeys = [k for k in obj if k != "reliability"]
 
     def fvec(m):
         cols = [m["rel"][:, it, 0] if k == "reliability" else m[k] for k in obj]
@@ -161,7 +199,7 @@ def run(name, cfg=None, log=print, out_dir=None):
 
         def evaluate(xs, full=full):
             ii = add(full(xs))
-            return fvec({k: np.array([pts[i][k] for i in ii]) for k in ("cost", "damage_mean", "damage_p90", "pop", "ecology", "livability")}
+            return fvec({k: np.array([pts[i][k] for i in ii]) for k in okeys}
                         | {"rel": np.array([pts[i]["rel"] for i in ii])}).tolist()
         n0 = len(pts)
         rng = np.random.default_rng(res["config"]["seed"] + 101 + m)
@@ -173,7 +211,7 @@ def run(name, cfg=None, log=print, out_dir=None):
 
     # ---- what to store: per combination the non-dominated policies first, then a random sample
     need = np.array([int(np.bitwise_or.reduce(amask[np.array(p["x"]) > 0])) if any(np.array(p["x"]) > 0) else 0 for p in pts])
-    Fall = fvec({k: np.array([p[k] for p in pts]) for k in ("cost", "damage_mean", "damage_p90", "pop", "ecology", "livability")}
+    Fall = fvec({k: np.array([p[k] for p in pts]) for k in okeys}
                 | {"rel": np.array([p["rel"] for p in pts])})
     keep = set(np.flatnonzero(need == 0).tolist())
     rng = np.random.default_rng(res["config"]["seed"] + 211)
@@ -191,10 +229,10 @@ def run(name, cfg=None, log=print, out_dir=None):
     keep = sorted(keep, key=lambda i: pts[i]["cost"])
     P = [pts[i] for i in keep]
     rel = np.round(np.array([p["rel"] for p in P]) * 250).astype(np.uint8)
-    ca = np.array([[sum(p["cost_var"][i] for i in range(nV) if actor[i] == a) for a in actors] for p in P])
+    ca = np.array([[sum(p["cost_var"][i] * shares[i].get(a, 0.0) for i in range(nV)) for a in actors] for p in P])
     r2 = lambda a, d=2: np.round(np.asarray(a, float), d).tolist()  # noqa: E731
     doc = {"name": name, "created": time.strftime("%Y-%m-%d %H:%M:%S"), "elapsed_s": time.time() - t0,
-           "actors": actors, "actor_of": actor, "objectives": obj, "target_curve": tc.tolist(), "rain_edges": edges.tolist(),
+           "actors": actors, "actor_of": actor, "actor_shares": shares, "objectives": obj, "target_curve": tc.tolist(), "rain_edges": edges.tolist(),
            "reference": {"damage": D_ref, "livability": res["reference"]["livability"], "ecology": res["reference"]["ecology"],
                          "pop_hazard": res["reference"]["pop_hazard"]},
            "scopes": scopes, "n_evaluated": len(pts),
@@ -203,6 +241,7 @@ def run(name, cfg=None, log=print, out_dir=None):
                       "damage_mean": r2([p["damage_mean"] for p in P], 1), "damage_p90": r2([p["damage_p90"] for p in P], 1),
                       "pop": r2([p["pop"] for p in P], 0), "households": r2([p["households"] for p in P], 0),
                       "livability": r2([p["livability"] for p in P], 3), "ecology": r2([p["ecology"] for p in P], 3),
+                      **{k: r2([p[k] for p in P], 4) for k in SUB_KEYS if k in P[0]},
                       "rel_shape": list(rel.shape[1:]), "rel_scale": 250,
                       "rel": base64.b64encode(rel.tobytes()).decode()}}
     (out / "scopes.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")

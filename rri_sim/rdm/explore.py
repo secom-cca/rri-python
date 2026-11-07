@@ -4,12 +4,15 @@
     explore.run(config.load(), "data/processed/explore/abukuma_explore")
 
 Instead of a budget constraint and weighted utilities, every policy is described
-by raw metrics over the uncertainty: the cost (by zone / type), the share of
-scenarios in which the damage stays below the target (`target_ratio` x the
-damage of the current climate without measures), the damage distribution by
-zone, flooded population, Livability and Ecology.  Paddy dams and afforestation
-are implementation rates (0-100 % of the candidate cells per zone); levees,
-retention basins and housing measures keep their options (candidates.py).
+by raw metrics over the uncertainty.  Objectives (explore.optimisation.objectives):
+the cost (present value), the expected damage and the target achievement rate (share
+of scenarios in which the damage stays below `target_ratio` x the damage of the
+current climate without measures).  Reported alongside, not optimised: the damage
+distribution by zone, flooded population, relocated households / population, service
+accessibility, natural habitat area, habitat connectivity and (auxiliary composites)
+Livability / Ecology.  Paddy dams, afforestation, forest management and private storage
+are implementation rates (0-100 % of the candidate cells per zone); levees, retention
+basins, relocation and house raising keep their options (candidates.py).
 
 1. design      RRI runs at a joint LHS of (measures, uncertainties) + no-measure runs
                + adaptive runs where the damage is close to the target (largest
@@ -35,12 +38,16 @@ import numpy as np
 from . import config as CF
 from . import nsga2 as NS
 from . import uncertainty as UQ
+from .candidates import superseded_raise
 from .evaluate import xkey
 from .sensitivity import GP, Linear, error_stats
 from ..data import PROCESSED
 
 EXPLORE_DIR = PROCESSED / "explore"
 LOG_KEYS = ("damage", "pop_hazard", "households")       # modelled as log(1 + y)
+SUB_KEYS = ("relocated_households", "relocated_population", "service_access", "natural_habitat_km2", "habitat_connectivity")
+SUB_SIGN = {"relocated_households": 1, "relocated_population": 1, "service_access": -1, "natural_habitat_km2": -1,
+            "habitat_connectivity": -1}                  # as objectives (minimised), if listed in optimisation.objectives
 
 
 # ------------------------------------------------------------------ decisions and uncertainties
@@ -95,9 +102,18 @@ class Space:
         def g(n):
             return np.broadcast_to(np.asarray(U.get(n, self.P[n]["nominal"] if n in self.P else 1.0), float), (len(X),))
         cols = []
+        sup = dict((j, i) for i, j in superseded_raise(self.V))      # raise j has no effect while relocation i is active
         for i, v in enumerate(self.V):
             xi = X[:, i]
-            if v.type == "levee":
+            if v.type == "raise":
+                hs = np.array([0.0 if p is None else p["height"] for p in v.params])
+                on = (X[:, sup[i]] == 0) if i in sup else 1.0
+                cols.append(hs[xi.astype(int)] / max(hs.max(), 1e-9) * g("raise_effect") * on)
+            elif v.type == "relocate" and len(v.options) == 2:
+                cols.append((xi > 0).astype(float))
+            elif v.type in ("forest_mgmt", "forest_mgmt_national"):
+                cols.append(xi * g("forest_mgmt_effect"))
+            elif v.type == "levee":
                 hs = np.array([0.0 if p is None else p["height"] for p in v.params])
                 cols.append(hs[xi.astype(int)] / max(hs.max(), 1e-9) * g("levee_effect"))
             elif v.type == "retention":
@@ -140,6 +156,7 @@ def cost_tables(ev, space, grid=11):
 
 def cost_of(x, tabs, space):
     tot, zone, typ = 0.0, {}, {}
+    sup = dict((j, i) for i, j in superseded_raise(space.V))
     for i, v in enumerate(space.V):
         t = tabs[i]
         if v.continuous:
@@ -154,6 +171,8 @@ def cost_of(x, tabs, space):
                 typ[k] = typ.get(k, 0.0) + mix(a["by_type"].get(k, 0.0), b["by_type"].get(k, 0.0))
         else:
             r = t["rows"][int(x[i])]
+            if i in sup and x[sup[i]]:
+                continue                                  # raised homes are relocated: no raising cost
             tot += r["total"]
             for z, c in r["by_zone"].items():
                 zone[z] = zone.get(z, 0.0) + c
@@ -209,7 +228,10 @@ def space_from_results(res):
         if v["type"] == "levee":
             params = [None if not h else {"height": float(h)} for h in hs]
         elif v["type"] == "relocate":
-            params = [None, {"type": "raise", "height": 1.0}, {"type": "relocate"}]
+            params = [None, {"type": "raise", "height": 1.0}, {"type": "relocate"}] if len(v["options"]) == 3 else [None, {"type": "relocate"}]
+        elif v["type"] == "raise":
+            hs = res["config"]["candidates"]["raise"]["heights_m"]
+            params = [None] + [{"type": "raise", "height": float(h)} for h in hs]
         else:
             params = [None, {}]
         V.append(Variable(v["name"], v["type"], v["zone"], v["options"], [], params, v["continuous"]))
@@ -227,7 +249,9 @@ def surrogate_from_results(res, keys, dirs, log=print):
         pk = Path(dr) / f"surrogate_{key}.pkl"
         if pk.exists():
             with open(pk, "rb") as f:
-                return pickle.load(f)
+                S = pickle.load(f)
+            if all(k in S.models for k in keys):          # a fit for fewer outputs is refit below
+                return S
     sp = space_from_results(res)
     U = {k: np.array([u[k] for u in d["u"]]) for k in sp.unames}
     F = sp.features(np.array(d["x"], float), U)
@@ -244,6 +268,7 @@ def surrogate_from_results(res, keys, dirs, log=print):
 
 def outputs_of(m):
     out = {k: m[k] for k in ("damage", "pop_hazard", "households", "livability", "ecology")}
+    out.update({k: m[k] for k in SUB_KEYS if m.get(k) is not None})
     out.update({"dz:" + z: v for z, v in m["damage_zone"].items()})
     return out
 
@@ -365,7 +390,7 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
     log(f"学習データ: LHS {de['n_train']} 点 + 対策なし {de['n_none']} 点")
     run_points(*design(de["n_train"]), "学習")
     run_points(*design(de["n_none"], zero_x=True), "対策なし")
-    keys = list(rows_y[0])
+    keys = [k for k in rows_y[0] if all(k in y for y in rows_y)]     # cached runs of older versions lack sub-indicators
 
     def feats(xs, us):
         U = {k: np.array([u[k] for u in us]) for k in sp.unames}
@@ -428,7 +453,8 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
         for i, x in enumerate(xs):
             o = {"cost": cost_of(x, tabs, sp)["total"], "reliability": -rel[i],
                  "damage_mean": float((Pm["damage"][i] * af).mean()), "ecology": -float(Pm["ecology"][i].mean()),
-                 "livability": -float(Pm["livability"][i].mean()), "pop_mean": float(Pm["pop_hazard"][i].mean())}
+                 "livability": -float(Pm["livability"][i].mean()), "pop_mean": float(Pm["pop_hazard"][i].mean()),
+                 **{k: SUB_SIGN[k] * float(Pm[k][i].mean()) for k in SUB_KEYS if k in Pm}}
             rows.append([o[k] for k in obj_names])
         return rows
     op = ex["optimisation"]
@@ -468,6 +494,7 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
             "damage_zone": {z: {"mean": float((Pm["dz:" + z][k] * af).mean()), "p90": q(Pm["dz:" + z][k] * af, .9)} for z in zones},
             "pop_hazard": {"mean": float(Pm["pop_hazard"][k].mean()), "p90": q(Pm["pop_hazard"][k], .9)},
             "households": float(Pm["households"][k].mean()),
+            "sub": {s: float(Pm[s][k].mean()) for s in SUB_KEYS if s in Pm},
             "livability": float(Pm["livability"][k].mean()), "ecology": float(Pm["ecology"][k].mean()),
             "ratio_samples": np.round(ratio, 3).tolist()})
 
@@ -501,7 +528,8 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
            "uncertainties": {n: {k: params[n][k] for k in ("low", "high", "nominal", "kind", "status", "label", "basis") if k in params[n]}
                              for n in sp.unames},
            "reference": {"damage": D_ref, "damage_zone": Dz_ref, "target": T, "target_ratio": ex["target_ratio"],
-                         "pop_hazard": ref["pop_hazard"], "livability": ref["livability"], "ecology": ref["ecology"]},
+                         "pop_hazard": ref["pop_hazard"], "livability": ref["livability"], "ecology": ref["ecology"],
+                         "sub": {s: ref[s] for s in SUB_KEYS if ref.get(s) is not None}},
            "zones": zones, "target_curve": ex["target_curve"], "rain_edges": edges.tolist(),
            "ensemble": {k: np.round(v, 4).tolist() for k, v in Uens.items()},
            "design": {"n_train": len(rows_y), "x": rows_x, "u": rows_u, "y": rows_y},

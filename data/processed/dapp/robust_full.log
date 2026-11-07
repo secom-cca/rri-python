@@ -12,5 +12,5 @@ Robust DAPP: 施策 22 変数・シナリオ 128（climate, landuse, effects, de
    可能な移行 10741（条件付き 6762）・経路の選択肢 1321
 3. ATP（ノードごと・シナリオごと）
 4–5. 適応経路と初期施策の評価: 初期施策の候補 16
-  経路: 初期施策 16 × シナリオ 128（観測に基づく経路・完全情報）44 s
-完了: /Users/nakashima/rri-python/data/processed/dapp/abukuma_dapp_robust/results.json（112 s）
+  経路: 初期施策 16 × シナリオ 128（観測に基づく経路・完全情報）48 s
+完了: /Users/nakashima/rri-python/data/processed/dapp/abukuma_dapp_robust/results.json（115 s）

@@ -131,6 +131,101 @@ def dapp_robust_simulate(req: RobustDappRequest):
     return _json.loads(_json.dumps(res, ensure_ascii=False, default=RR._json))
 
 
+class MultiRecalcRequest(BaseModel):
+    name: str                # the displayed Multi-Actor run (its settings are the base)
+    actors: dict = {}        # {actor: {per_decade_oku, targets: {damage_ratio, pop_ratio}, weights: {...}}}
+    basin_weights: dict = {}
+    size: str = "standard"   # multi.gui.sizes: fast / standard / full
+
+
+def _dapp_dir(name):
+    import re
+    from ..dapp.multi import DAPP_DIR
+    if not re.fullmatch(r"[\w\-.]+", name) or name.startswith("."):
+        raise HTTPException(400, "bad name")
+    return DAPP_DIR / name
+
+
+@app.post("/api/dapp/multi/recalculate")
+def dapp_multi_recalculate(req: MultiRecalcRequest):
+    """Individual / Joint / Single again with other per-decade capacities, targets and weights (job; docs/11 11.10)."""
+    import json as _json
+    from ..dapp import multi as MU
+    from ..roadmap.physics import SurrogatePhysics
+    d = _dapp_dir(req.name)
+    if not (d / "config.json").exists():
+        raise HTTPException(404, f"no Multi-Actor run {req.name}")
+    try:
+        cfg = MU.gui_config(_json.loads((d / "config.json").read_text(encoding="utf-8")),
+                            {"actors": req.actors, "basin_weights": req.basin_weights}, req.size)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+    name = cfg["multi"]["name"]
+    if (MU.DAPP_DIR / name / "summary.json").exists():
+        return {"job": None, "name": name}                       # the same inputs were computed before
+
+    def fn(progress):
+        ex = cfg["robust"]["explore_run"]
+        if ex not in _roadmap_phys:
+            progress(0.01, "代理モデルを読み込み中")
+            _roadmap_phys[ex] = SurrogatePhysics(ex, log=lambda m: None)
+        return MU.recalculate(cfg, _roadmap_phys[ex], progress)
+    return {"job": engine._start(fn), "name": name}
+
+
+@app.get("/api/dapp/multi/summaries/{name}")
+def dapp_multi_summaries(name: str):
+    """Conditions and headline results of a Multi-Actor run's family (the base run and its GUI recalculations)."""
+    from ..dapp import multi as MU
+    _dapp_dir(name)
+    return MU.summaries(name)
+
+
+class AdaptiveRecalcRequest(BaseModel):
+    name: str                # the displayed Adaptive DAPP run (its settings and recommended rules are the base)
+    targets: dict = {}       # damage_ratio, pop_ratio, from_year
+    noise_damage: float | None = None
+    noise_climate: float | None = None
+    trend_window: int | None = None
+    rain_from_year: int | None = None
+    forecast_noise: float | None = None
+    mode: str = "fixed"      # fixed: re-evaluate the recommended rules; search: search the rules again
+    size: str = "fast"
+
+
+@app.post("/api/dapp/adaptive/recalculate")
+def dapp_adaptive_recalculate(req: AdaptiveRecalcRequest):
+    """Adaptive DAPP again with other targets / information quality (job; docs/11 11.11.5)."""
+    import json as _json
+    from ..dapp import adaptive as AD
+    from ..roadmap.physics import SurrogatePhysics
+    d = _dapp_dir(req.name)
+    if not (d / "config.json").exists():
+        raise HTTPException(404, f"no Adaptive DAPP run {req.name}")
+    try:
+        cfg = AD.gui_config(_json.loads((d / "config.json").read_text(encoding="utf-8")), req.model_dump(), req.mode, req.size)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+    name = cfg["adaptive"]["name"]
+    if (AD.DAPP_DIR / name / "summary.json").exists():
+        return {"job": None, "name": name}
+
+    def fn(progress):
+        ex = cfg["robust"]["explore_run"]
+        if ex not in _roadmap_phys:
+            progress(0.01, "代理モデルを読み込み中")
+            _roadmap_phys[ex] = SurrogatePhysics(ex, log=lambda m: None)
+        return AD.recalculate(cfg, _roadmap_phys[ex], progress)
+    return {"job": engine._start(fn), "name": name}
+
+
+@app.get("/api/dapp/adaptive/summaries/{name}")
+def dapp_adaptive_summaries(name: str):
+    from ..dapp import adaptive as AD
+    _dapp_dir(name)
+    return AD.summaries(name)
+
+
 @app.get("/explore")
 def explore_page():
     """Exploration without stakeholder weights (scripts/run_explore.py; docs/12_explore.md)."""

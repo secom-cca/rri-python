@@ -312,7 +312,7 @@ def pareto_change(R):
     n_p, n_s = len(M["damage"]), len(M["damage"][0])
     mem = np.zeros((n_p, n_s), bool)
     for s in range(n_s):
-        F = np.array([[M["damage"][p][s], M["cost"][p][s], -M["livability"][p][s], -M["ecology"][p][s]] for p in range(n_p)])
+        F = np.array([[M["damage"][p][s], M["cost"][p][s]] for p in range(n_p)])     # objectives of run.py
         mem[:, s] = nsga2.pareto_mask(F)
     clim = [R["sims"][sc["sim"]].get("climate", "") for sc in R["scenarios"]]
     by_clim, fronts = {}, {}

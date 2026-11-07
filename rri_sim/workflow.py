@@ -28,6 +28,7 @@ PRESETS = {
 # extra land classes used only by scenarios
 PADDY_DAM = "paddy_dam"
 FOREST_NEW = "forest_new"
+FOREST_MGMT = "forest_managed"
 
 
 def model_land_params() -> list[LandClassParams]:
@@ -52,6 +53,10 @@ def model_land_params() -> list[LandClassParams]:
                               sf=field.sf, infilt_limit=field.infilt_limit))
     lp.append(LandClassParams(name="wetland", n=0.1, kv=paddy.kv, phi_minus_theta=paddy.phi_minus_theta,
                               sf=paddy.sf, infilt_limit=paddy.infilt_limit))
+    # 森林整備 (thinning / forest-floor conservation of existing forest): placeholder; the scenario
+    # engine copies the basin's calibrated forest and raises its soil storage (gui.engine.apply_edits)
+    lp.append(LandClassParams(name=FOREST_MGMT, n=0.4, ka=0.1, soil_depth=1.0, gamma_a=0.4,
+                              gamma_m=0.1, beta=8.0))
     return lp
 
 
