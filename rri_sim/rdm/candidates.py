@@ -8,7 +8,10 @@ forest_mgmt / relocate / raise / pump / storage), so the RRI model is used uncha
     levee      per zone: existing levee + 0/1/2 m on the river cells with upstream area >= min_area_km2;
                select "overflow": only those whose peak water level in the baseline reaches the crest
                (ground + existing levee) within margin_m (where the river actually overtops)
-    retention  n sites: farmland/forest next to a large river, low HAND, not built-up
+    retention  n sites: farmland/forest next to a large river, low HAND, not built-up; or `sites` (a planned
+               project, e.g. 阿武隈川上流遊水地群): one variable per site, the n = round(area / cell) farmland/forest
+               cells next to a river >= min_river_km2 within radius_km of lonlat with the lowest HAND (HAND limit
+               not applied); the site's stated area and volume set the capacity and cost (engine area_m2 / volume_m3)
     paddy_dam  per zone: all paddies
     forest     per zone: farmland with HAND >= hand_min_m (upland) -> new forest (森林化)
     forest_mgmt_national / forest_mgmt
@@ -91,6 +94,45 @@ def _grow_site(seed, ok, nx, n_cells):
     return site
 
 
+def _planned_sites(d, r, rt, lc, ci, is_riv, h, zone_of, basin=None):
+    """Retention basins of a planned project (`retention.sites` of this basin), one variable each; [] when none can be
+    placed (other basin, a domain without coordinates or without suitable cells: the automatic sites are used)."""
+    from pyproj import Transformer
+    sites = [st for st in rt["sites"] if st.get("basin") in (None, basin)]
+    if not sites or not getattr(d, "crs", None) or getattr(d, "transform", None) is None:
+        return []
+    ny, nx = d.shape
+    cell = float(d.dx) ** 2
+    farm = np.isin(lc, [ci["paddy"], ci["field"], ci["forest"]]) & d.mask.ravel() & ~is_riv
+    near = np.zeros(ny * nx, bool)                    # next to (8 neighbours) a river >= min_river_km2
+    for k in np.flatnonzero(r.area_km2 >= rt.get("min_river_km2", 300.0)):
+        i0, j0 = r.ri[k], r.rj[k]
+        near.reshape(ny, nx)[max(i0 - 1, 0):i0 + 2, max(j0 - 1, 0):j0 + 2] = True
+    ii, jj = np.divmod(np.arange(ny * nx), nx)
+    try:
+        tr = Transformer.from_crs("EPSG:4326", d.crs, always_xy=True)
+    except Exception:                                  # synthetic domains (tests)
+        return []
+    out = []
+    for st in sites:
+        x, y = tr.transform(*st["lonlat"])
+        col, row = (x - d.transform.c) / d.transform.a - 0.5, (y - d.transform.f) / d.transform.e - 0.5
+        dist = np.hypot(ii - row, jj - col) * d.dx / 1000.0
+        cand = np.flatnonzero(farm & near & (dist <= st.get("radius_km", 2.5)))
+        n = max(1, int(round(st["area_ha"] * 1e4 / cell)))
+        cells = cand[np.lexsort((dist[cand], h[cand]))][:n].tolist()      # lowest HAND, then nearest
+        if not cells:
+            continue
+        z = str(zone_of[cells[0]])
+        area = float(st["area_ha"]) * 1e4
+        p = {"depth": float(st["volume_m3"]) / area, "area_m2": area, "volume_m3": float(st["volume_m3"]),
+             "auto": True, "q_ratio": 0.7}
+        out.append(Variable(f"遊水地・{z}", "retention", z,
+                            ["なし", f"{st.get('label', '遊水地')}（{st['area_ha']:.0f} ha, {st['volume_m3'] / 1e4:.0f} 万m³）"],
+                            cells, [None, p]))
+    return out
+
+
 def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_river_hmax=None,
           national_forest=None) -> list[Variable]:
     c = cfg["candidates"]
@@ -99,12 +141,17 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_rive
     zone_of = np.full(ny * nx, "", object)
     for z, m in zm.items():
         zone_of[m.ravel()] = z
-    lc = d.landclass.ravel()
+    from ..k1rri import is_1k
+    k1 = is_1k(d)
+    # 1K-RRI: measures on the plain select by the plain's land use; every cell holds a channel (not excluded from sites)
+    lc = (d.lc_f if k1 else d.landclass).ravel()
     ci = {n: i for i, n in enumerate(class_names)}
     h = np.nan_to_num(hand, nan=1e9).ravel()
     r = d.river
     riv_flat = r.ri * nx + r.rj
-    is_riv = np.zeros(ny * nx, bool); is_riv[riv_flat] = True
+    is_riv = np.zeros(ny * nx, bool)
+    if not k1:
+        is_riv[riv_flat] = True
     out = []
     # levee: main rivers per zone
     lv = c.get("levee")
@@ -121,7 +168,9 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_rive
                                     [None if not x else {"height": float(x)} for x in hs]))
     # retention sites
     rt = c.get("retention")
-    if rt is not None:
+    planned = _planned_sites(d, r, rt, lc, ci, is_riv, h, zone_of, cfg.get("basin")) if rt and rt.get("sites") else []
+    out += planned
+    if rt is not None and not planned and rt.get("n_sites"):
         farm = np.isin(lc, [ci["paddy"], ci["field"], ci["forest"]])
         ok = d.mask.ravel() & farm & ~is_riv & (h <= rt["hand_max_m"])
         big = r.area_km2 >= rt["min_river_km2"]
@@ -159,7 +208,8 @@ def build(d, meta, hand, assets, class_names, baseline_depth, cfg, baseline_rive
                 out.append(Variable(f"森林化・{z}", "forest", z, ["なし", f"HAND {fo['hand_min_m']:.0f} m以上の農地"], cells.tolist(), [None, {}]))
         fm = c.get("forest_mgmt")
         if fm is not None:
-            fcells = mz & (lc == ci["forest"]) & (h >= fm.get("hand_min_m", 0.0))
+            fcells = mz & (((d.As.ravel() > 0) & (d.lc_s.ravel() == ci["forest"])) if k1 else (lc == ci["forest"])) \
+                & (h >= fm.get("hand_min_m", 0.0))
             nat = np.zeros_like(fcells) if national_forest is None or not fm.get("split_owner", True) \
                 else np.asarray(national_forest, bool).ravel()
             for typ, lab, sel, owner in (("forest_mgmt_national", "森林整備（国有林）", fcells & nat, "national"),
@@ -234,7 +284,7 @@ def superseded_raise(variables):
 
 def edits(variables, x, scen=None):
     """Decision vector -> GUI edits.  scen may scale measure parameters:
-    levee_effect x levee raise, retention_effect x retention depth, raise_effect x house raise."""
+    levee_effect x levee raise, retention_effect x retention depth (and volume of a planned site), raise_effect x house raise."""
     scen = scen or {}
     out = []
     for v, xi in zip(variables, x):
@@ -245,6 +295,8 @@ def edits(variables, x, scen=None):
         e = {"type": v.type, "cells": cells, **p}
         if v.type == "retention":
             e["depth"] = p["depth"] * scen.get("retention_effect", 1.0)
+            if p.get("volume_m3"):              # a planned site: the stated volume x the effect coefficient
+                e["volume_m3"] = p["volume_m3"] * scen.get("retention_effect", 1.0)
         if v.type == "levee":
             e["height"] = p["height"] * scen.get("levee_effect", 1.0)
         if e["type"] == "raise":

@@ -20,11 +20,19 @@ DEFAULT = {
         # per zone; "overflow": river cells (>= min_area_km2) that overtop in the baseline (within margin_m),
         # "area": all of them (the earlier default with min_area_km2 300 = main rivers, which hardly overtop at 1000 m)
         "levee": {"min_area_km2": 5.0, "heights_m": [0, 1, 2], "select": "overflow", "margin_m": 0.2},
-        "retention": {"n_sites": 3, "depth_m": 3.0, "site_km2": 2.0, "hand_max_m": 3.0, "min_river_km2": 300.0},
+        # 遊水地: the planned 阿武隈川上流遊水地群 (鏡石町・玉川村・矢吹町, 3 basins as one option; 国交省 福島河川国道事務所
+        # 「阿武隈川上流遊水地群の概要」: 総面積 約350 ha, 貯留量 約1,500万m³, 全面買収・掘削).  Earlier runs (explore v2 and before)
+        # used 3 automatic sites (n_sites, depth_m, site_km2, hand_max_m)
+        # other basins (or a domain without the site) fall back to the automatic sites (n_sites ...)
+        "retention": {"n_sites": 3, "depth_m": 3.0, "site_km2": 2.0, "hand_max_m": 3.0, "min_river_km2": 300.0,
+                      "sites": [{"basin": "abukuma_whole", "label": "阿武隈川上流遊水地群", "lonlat": [140.392, 37.228], "radius_km": 2.5,
+                                 "area_ha": 350.0, "volume_m3": 1.5e7, "status": "計画値",
+                                 "basis": "国交省 福島河川国道事務所 阿武隈川上流遊水地群の概要（鏡石町・玉川村・矢吹町）"}]},
         "paddy_dam": {},                                                      # per zone, all paddies
-        "forest": {"hand_min_m": 20.0},                                       # per zone, upland farmland -> 森林化
+        # 森林化（農地の植林）は 1K-RRI では扱わない（山地・平野の面積が変わる）。森林は森林整備（既存森林の物理パラメータ）で扱う
+        "forest": None,
         # 森林整備 of the existing forest, per zone and owner (国有林 KSJ A45 / 民有林等)
-        "forest_mgmt": {"hand_min_m": 0.0, "split_owner": True, "min_cells": 3},
+        "forest_mgmt": {"hand_min_m": 0.0, "split_owner": False, "min_cells": 3},
         # housing: "split" = separate variables 移転 (none / relocate) and 嵩上げ (none / heights_m);
         # "combined" (stored configs without this key) = one variable none / raise (raise_m) / relocate
         "housing": "split",
@@ -44,12 +52,6 @@ DEFAULT = {
         # simulated (each value needs RRI runs)
         "rain_gamma": {"low": 0.9, "high": 1.2, "nominal": 1.0, "kind": "sim",
                        "label": "降雨強度の強調 γ（総雨量一定で強雨を強める）"},
-        "paddy_effect": {"low": 0.5, "high": 1.0, "nominal": 1.0, "kind": "sim",
-                         "label": "田んぼダムの効果係数（貯留深 15 cm × 係数）"},
-        "forest_effect": {"low": 0.5, "high": 1.0, "nominal": 1.0, "kind": "sim",
-                          "label": "森林化の効果係数（土層厚・粗度の増分 × 係数）"},
-        "retention_effect": {"low": 0.7, "high": 1.0, "nominal": 1.0, "kind": "sim",
-                             "label": "遊水地の効果係数（有効貯留深 × 係数）"},
         # post-hoc (applied to stored results, no RRI run)
         "cost_factor": {"low": 0.8, "high": 1.5, "nominal": 1.0, "kind": "post", "label": "事業費係数"},
         "asset_factor": {"low": 0.8, "high": 1.2, "nominal": 1.0, "kind": "post", "label": "資産額（被害額）係数"},
@@ -82,19 +84,6 @@ DEFAULT = {
             "rain_gamma": {"low": 0.8, "high": 1.3, "nominal": 1.0, "kind": "sim", "status": "仮定",
                            "label": "降雨強度分布 γ（総雨量一定で強雨を強める/弱める）",
                            "basis": "幅は仮定。d4PDF 等の時間雨量分布の変化で置き換えること"},
-            "levee_effect": {"low": 0.5, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
-                             "label": "堤防の効果係数（嵩上げの実効高さ）", "basis": "施工区間の不連続・沈下・弱部を想定した仮定"},
-            "retention_effect": {"low": 0.5, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
-                                 "label": "遊水地の効果係数（有効貯留深）", "basis": "越流堤の運用・堆砂を想定した仮定"},
-            "paddy_effect": {"low": 0.3, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
-                             "label": "田んぼダムの効果係数（貯留深 15 cm × 係数）", "basis": "取組率・排水口管理のばらつきを想定した仮定"},
-            "forest_effect": {"low": 0.3, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
-                              "label": "森林化の効果係数（土層厚・粗度の増分 × 係数）", "basis": "森林の成熟度（植栽後の年数）を想定した仮定"},
-            "forest_mgmt_effect": {"low": 0.0, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
-                                   "label": "森林整備の効果係数（既存森林の土壌貯留 d_a, d_m の増分 20% × 係数）",
-                                   "basis": "間伐・下層植生回復による保水力の改善量は観測例が少なく大洪水では小さいとされるため、0（効果なし）〜1 の幅を仮定"},
-            "raise_effect": {"low": 0.5, "high": 1.0, "nominal": 1.0, "kind": "sim", "status": "仮定",
-                             "label": "嵩上げの効果係数（床高の上げ幅 × 係数）", "basis": "対象世帯の実施率を想定した仮定"},
             "cost_factor": {"low": 0.8, "high": 1.5, "nominal": 1.0, "kind": "post", "status": "仮定",
                             "label": "事業費係数", "basis": "公共事業の事業費の増減幅を想定した仮定"},
             "asset_factor": {"low": 0.8, "high": 1.2, "nominal": 1.0, "kind": "post", "status": "仮定",

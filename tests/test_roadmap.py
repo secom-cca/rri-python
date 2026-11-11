@@ -14,8 +14,7 @@ from rri_sim.roadmap import sim as SM
 from rri_sim.roadmap import world as WD
 from rri_sim.roadmap.social import Social
 
-RANGES = {"rain_factor": (1.0, 1.3), "sea_level_rise_m": (0.0, 0.7), "rain_gamma": (0.8, 1.3), "levee_effect": (0.5, 1.0),
-          "retention_effect": (0.5, 1.0), "paddy_effect": (0.3, 1.0), "forest_effect": (0.3, 1.0), "raise_effect": (0.5, 1.0)}
+RANGES = {"rain_factor": (1.0, 1.3), "sea_level_rise_m": (0.0, 0.7), "rain_gamma": (0.8, 1.3)}       # no effect coefficients
 
 
 class FakePhysics(PH.Physics):
@@ -28,7 +27,7 @@ class FakePhysics(PH.Physics):
              "heights": [0.0, 1.0, 2.0]},
             {"name": "遊水地1・下流", "type": "retention", "zone": "下流", "options": ["なし", "3 m"], "continuous": False, "n_cells": 2},
             {"name": "田んぼダム・上流", "type": "paddy_dam", "zone": "上流", "options": ["0%", "100%"], "continuous": True, "n_cells": 40},
-            {"name": "森林化・上流", "type": "forest", "zone": "上流", "options": ["0%", "100%"], "continuous": True, "n_cells": 10},
+            {"name": "森林整備・上流", "type": "forest_mgmt", "zone": "上流", "options": ["0%", "100%"], "continuous": True, "n_cells": 10},
             {"name": "住宅対策・下流", "type": "relocate", "zone": "下流", "options": ["なし", "嵩上げ", "移転"], "continuous": False, "n_cells": 3},
             {"name": "排水ポンプ（下水道）・下流", "type": "pump_urban", "zone": "下流", "options": ["なし", "+10 mm/h"], "continuous": False, "n_cells": 2},
             {"name": "雨水貯留（各戸）・下流", "type": "storage_private", "zone": "下流", "options": ["0%", "100%"], "continuous": True, "n_cells": 2},
@@ -42,19 +41,19 @@ class FakePhysics(PH.Physics):
 
     def cost_parts(self, i, level):
         if self.variables[i]["continuous"]:
-            c = {"paddy_dam": (10.0, 0.5), "forest": (60.0, 5.0), "storage_private": (40.0, 0.2)}[self.variables[i]["type"]]
+            c = {"paddy_dam": (10.0, 0.5), "forest_mgmt": (60.0, 5.0), "storage_private": (40.0, 0.2)}[self.variables[i]["type"]]
             return c[0] * level, c[1] * level
         return float(self.table[i][int(round(level))]), 0.0
 
     def predict(self, raw, env):
         F = self.features(raw, env)
-        lev, ret, paddy, f_eff, f_land, rai, rel, pump, stor, rain, slr, gam = [F[:, j] for j in range(12)]
+        lev, ret, paddy, fm, rai, rel, pump, stor, rain, slr, gam = [F[:, j] for j in range(11)]
         k = (1.0 + 0.3 * rain) ** 2.5 * (1 + 0.2 * slr)
-        up = 300 * k * (1 - 0.35 * paddy) * (1 - 0.3 * f_eff)
+        up = 300 * k * (1 - 0.35 * paddy) * (1 - 0.3 * fm)
         down = 500 * k * (1 - 0.3 * lev) * (1 - 0.2 * ret) * (1 - 0.15 * paddy) * (1 - 0.2 * rai - 0.4 * rel) * (1 - 0.2 * pump) * (1 - 0.1 * stor)
         pop = 3000 * k ** 1.2 * (1 - 0.3 * rai - 0.6 * rel) * (1 - 0.1 * paddy)
         return {"damage": up + down, "dz:上流": up, "dz:下流": down, "pop_hazard": pop, "households": pop / 2.5,
-                "livability": 60 - 2.0 * rel, "ecology": 60 - 1.5 * lev + 1.0 * f_land}
+                "livability": 60 - 2.0 * rel, "ecology": 60 - 1.5 * lev + 1.0 * fm}
 
 
 def cfg(**over):
@@ -80,28 +79,26 @@ def test_features_match_the_exploration_surrogate_inputs():
     V = [CA.Variable("堤防・下流", "levee", "下流", ["なし", "+1 m", "+2 m"], [], [None, {"height": 1.0}, {"height": 2.0}]),
          CA.Variable("遊水地1", "retention", "下流", ["なし", "3 m"], [], [None, {"depth": 3.0}]),
          CA.Variable("田んぼダム", "paddy_dam", "上流", ["0%", "100%"], [], [None, {}], True),
-         CA.Variable("森林化", "forest", "上流", ["0%", "100%"], [], [None, {}], True),
+         CA.Variable("森林整備", "forest_mgmt", "上流", ["0%", "100%"], [], [None, {}], True),
          CA.Variable("住宅", "relocate", "下流", ["なし", "嵩上げ", "移転"], [], [None, {"type": "raise"}, {"type": "relocate"}])]
     P = {k: {"low": lo, "high": hi, "nominal": 1.0, "kind": "sim"} for k, (lo, hi) in RANGES.items()}
     sp = EX.Space(V, P)
     X = np.array([[2, 1, 0.4, 0.7, 1], [1, 0, 1.0, 0.0, 2]], float)
-    U = {"rain_factor": np.array([1.1, 1.25]), "sea_level_rise_m": np.array([0.2, 0.5]), "rain_gamma": np.array([1.0, 1.1]),
-         "levee_effect": np.array([0.9, 0.6]), "retention_effect": np.array([0.8, 0.8]), "paddy_effect": np.array([0.5, 0.9]),
-         "forest_effect": np.array([0.4, 0.4]), "raise_effect": np.array([0.7, 0.7])}
+    U = {"rain_factor": np.array([1.1, 1.25]), "sea_level_rise_m": np.array([0.2, 0.5]), "rain_gamma": np.array([1.0, 1.1])}
     ph = FakePhysics()
     ph.variables = ph.variables[:5]
     ph.layout = PH.layout_of(ph.variables)
-    # raw columns: levee h/hmax, retention, paddy rate, forest (rate x maturity 1, rate), housing (raised, relocated)
-    raw = np.array([[1.0, 1, 0.4, 0.7, 0.7, 1, 0], [0.5, 0, 1.0, 0.0, 0.0, 0, 1]], float)
+    # raw columns: levee h/hmax, retention, paddy rate, forest management rate, housing (raised, relocated)
+    raw = np.array([[1.0, 1, 0.4, 0.7, 1, 0], [0.5, 0, 1.0, 0.0, 0, 1]], float)
     assert np.allclose(ph.features(raw, U), sp.features(X, U))
 
 
 def test_reference_and_agriculture():
     c, ph, ref = setup()
     assert ref["damage"] > 0 and ref["agriculture"] == 100.0
-    raw = np.zeros((1, len(ph.layout))); raw[0, 4] = 1.0; raw[0, 1] = 1.0     # all forest land + retention site
-    assert len(ph.variables) == 7 + 4 and len(ph.layout) == 9                # institutional measures have no raw columns
-    assert np.isclose(ph.agriculture(raw)[0], 100 * (1 - (10 + 2) / 50))
+    raw = np.zeros((1, len(ph.layout))); raw[0, 3] = 1.0; raw[0, 1] = 1.0     # forest management (no farmland) + retention site
+    assert len(ph.variables) == 7 + 4 and len(ph.layout) == 8                # institutional measures have no raw columns
+    assert np.isclose(ph.agriculture(raw)[0], 100 * (1 - 2 / 50))
 
 
 # ------------------------------------------------------------------ social layer
@@ -139,15 +136,18 @@ def test_phases_budget_and_maintenance():
     assert st.capital.sum() <= 1000.0 + 1e-6 and st.maint.sum() > 0
 
 
-def test_forest_effect_matures_slowly_and_upgrade_costs_a_change():
+def test_gradual_measures_grow_linearly_and_upgrade_costs_a_change():
     c, ph, ref = setup()
     w = WD.belief_world(c)
     st = SM.run(w, PL.FixedController([{"var": 3, "level": 1.0, "year": 2020}, {"var": 4, "level": 1, "year": 2020},
-                                       {"var": 4, "level": 2, "year": 2040}]), ph, c, ref)
-    a = next(a for a in st.actions if a.var == 3)
-    e1, land1 = st.vec(3, a.t_cons + a.build)
-    e2, land2 = st.vec(3, 2100)
-    assert land1 == land2 > 0 and e1 < e2 <= land2                               # planted, effect still growing
+                                       {"var": 5, "level": 1, "year": 2020}, {"var": 4, "level": 2, "year": 2040}]), ph, c, ref)
+    for i in (3, 5):                                 # forest management (diffusion) and the urban pump (build): 0 -> 100 % linearly
+        a = next(a for a in st.actions if a.var == i)
+        dur = a.build + a.diffuse
+        assert dur > 0 and np.isclose(st.vec(i, a.t_cons + dur / 2)[0], a.final[0] / 2) and np.isclose(st.vec(i, a.t_cons + dur)[0], a.final[0])
+    lev = SM.run(w, PL.FixedController([{"var": 0, "level": 2, "year": 2020}]), ph, c, ref)
+    a = lev.actions[0]
+    assert lev.vec(0, a.t_cons + a.build - 0.1)[0] == 0.0 and lev.vec(0, a.t_cons + a.build + 0.1)[0] == 1.0   # levees: a step
     up = next(e for e in st.log if e["event"] == "start" and e["var"] == 4 and e["level"] == 2)
     assert np.isclose(up["change_cost"], c["measures"]["raise"]["change_cost_fraction"] * 30.0)
     assert st.vec(4, 2100)[1] > 0                                                 # relocated share
@@ -165,17 +165,28 @@ def test_failed_consensus_releases_budget_and_dapp_retries():
 
 
 # ------------------------------------------------------------------ worlds
-def test_world_paths_and_regime_mapping():
+def test_world_paths_forecast_learning_and_regime_mapping():
     c = cfg()
     F = WD.factors(c)
+    assert not {"climate_shift_year", "landuse_shift_year"} & set(F) and not any(k.startswith("eff_") for k in F)
     z = WD.unit_nominal(F)
     w = WD.make_world(c, z, 1)
     b = WD.belief_world(c)
     assert np.isclose(w.rain(2100), b.rain(2100)) and np.isclose(w.rain(2040), b.rain(2040))
     names = list(F)
-    z2 = z.copy(); z2[names.index("rain_2100")] = 1.0; z2[names.index("climate_shift_year")] = 0.0
+    z2 = z.copy(); z2[names.index("rain_2100")] = 1.0
     w2 = WD.make_world(c, z2, 1)
-    assert np.isclose(w2.rain(2030), b.rain(2030)) and np.isclose(w2.rain(2100), 1.3) and w2.rain(2060) > b.rain(2060)
+    assert np.isclose(w2.rain(2100), 1.3) and np.isclose(w2.rain(2050), 1 + 0.3 * c["climate"]["path_2050"]["rain"])
+    assert np.isclose(w2.asset(2060), 1 + (w2.p["asset_pts"][-1][1] - 1) * 0.5)                  # exposure: linear from the start
+    # forecast: the prior at the start, s.d. halving by half_year, converging to the truth; the belief has no information
+    m0, s0 = w2.forecast(2020)["rain"]
+    hy = w2.p["forecast"]["half_year"]
+    assert np.isclose(m0, c["climate"]["belief"]["rain_2100"]) and np.isclose(w2.forecast(hy)["rain"][1], s0 / 2)
+    errs = [np.mean([abs(WD.make_world(c, z2, s).forecast(t)["rain"][0] - 1.3) for s in range(40)]) for t in (2020, 2060, 2100)]
+    assert errs[0] > errs[1] > errs[2]
+    assert b.forecast(2080)["rain"][0] == b.forecast(2020)["rain"][0]
+    f = w2.fc["rain"]
+    assert np.isclose(f.spread_later(2040, 20) ** 2, f.sd(2040) ** 2 - f.sd(2060) ** 2)
     z3 = z.copy(); z3[names.index("regime_kind")] = 0.99
     w3 = WD.make_world(c, z3, 1)
     assert len(w3.p["regimes"]) == 2 and w3.regime_at(2100) == F["regime_kind"]["categories"][-1]
@@ -206,7 +217,7 @@ def test_p2_updates_on_a_climate_surprise_and_p3_on_new_criteria():
     c, ph, ref = setup()
     F = WD.factors(c); names = list(F)
     z = WD.unit_nominal(F)
-    z[names.index("rain_2100")] = 1.0; z[names.index("slr_2100")] = 1.0; z[names.index("climate_shift_year")] = 0.0
+    z[names.index("rain_2100")] = 1.0; z[names.index("slr_2100")] = 1.0
     z[names.index("regime_kind")] = 0.99; z[names.index("regime_year")] = 0.2
     w = WD.make_world(c, z, 7)
     road, _ = PL.initial_roadmap(c, ph, ref, seed=1)
@@ -280,7 +291,7 @@ def test_inland_measures_complete_and_reduce_damage():
     ip, isp = var(ph, "pump_urban"), var(ph, "storage_private")
     st = SM.run(w, PL.FixedController([{"var": ip, "level": 1, "year": 2020}, {"var": isp, "level": 1.0, "year": 2020}]), ph, c, ref)
     a = next(a for a in st.actions if a.var == ip)
-    assert st.vec(ip, a.t_cons + a.build - 0.1)[0] == 0.0 and st.vec(ip, a.t_cons + a.build + 0.1)[0] == 1.0
+    assert np.isclose(st.vec(ip, a.t_cons + a.build / 2)[0], 0.5) and st.vec(ip, a.t_cons + a.build + 0.1)[0] == 1.0   # linear ramp
     b = next(a for a in st.actions if a.var == isp)
     assert 0 < st.vec(isp, 2100)[0] <= b.adopt + 1e-9 and b.adopt < 0.7          # private storage limited by participation
     st0 = SM.run(w, PL.FixedController([]), ph, c, ref)

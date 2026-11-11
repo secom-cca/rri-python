@@ -124,7 +124,7 @@ def test_pipeline_with_a_fake_evaluator_writes_reproducible_results(tmp_path):
     assert 0 <= rec < n_p
     # climate dominates the damage of the recommended policy in the fake model
     s = saved["sobol"]["被害額（総合推奨案）"]
-    assert s["climate"]["ST"] > s["paddy_effect"]["ST"]
+    assert s["climate"]["ST"] >= max(v["ST"] for k, v in s.items() if isinstance(v, dict) and "ST" in v)
     # same config + seed -> same results
     res2 = RUN.run(cfg, tmp_path / "again", evaluator=FakeEvaluator(), log=lambda *a: None)
     assert res2["pareto"] == res["pareto"] and res2["robustness"]["overall"] == res["robustness"]["overall"]
@@ -152,3 +152,38 @@ def test_candidates_on_the_synthetic_basin():
     assert {"paddy_dam", "relocate"} <= types
     for v in V:
         assert v.params[0] is None and len(v.params) == len(v.options) and v.cells
+
+
+def test_planned_retention_site_is_one_variable_with_its_stated_area_and_volume():
+    """retention.sites (阿武隈川上流遊水地群): the n = round(area / cell) farmland cells next to the large river
+    near lonlat, lowest HAND first; the stated area and volume go to the edit; other basins get nothing."""
+    from types import SimpleNamespace
+    from pyproj import Transformer
+    from rasterio.transform import from_origin
+    ny, nx, dx = 9, 9, 1000.0
+    tr = from_origin(400000.0, 4130000.0, dx, dx)
+    river = SimpleNamespace(ri=np.arange(ny), rj=np.full(ny, 4), area_km2=np.full(ny, 800.0))
+    d = SimpleNamespace(shape=(ny, nx), dx=dx, mask=np.ones((ny, nx), bool), crs="EPSG:6691", transform=tr)
+    names = ["forest", "paddy", "field", "urban"]
+    ci = {n: i for i, n in enumerate(names)}
+    lc = np.full(ny * nx, ci["paddy"]); lc[4 * nx + 3] = ci["urban"]
+    is_riv = np.zeros(ny * nx, bool); is_riv[np.arange(ny) * nx + 4] = True
+    h = np.full(ny * nx, 10.0); h[[3 * nx + 3, 5 * nx + 5, 4 * nx + 5]] = [2.0, 3.0, 4.0]
+    lon, lat = Transformer.from_crs("EPSG:6691", "EPSG:4326", always_xy=True).transform(400000.0 + 4.5 * dx, 4130000.0 - 4.5 * dx)
+    rt = {"min_river_km2": 300.0, "sites": [{"basin": "b", "label": "遊水地群", "lonlat": [lon, lat], "radius_km": 2.0,
+                                             "area_ha": 350.0, "volume_m3": 1.5e7}]}
+    zone_of = np.full(ny * nx, "上流", object)
+    V = CA._planned_sites(d, river, rt, lc, ci, is_riv, h, zone_of, "b")
+    assert len(V) == 1 and V[0].name == "遊水地・上流" and V[0].type == "retention"
+    assert len(V[0].cells) == 4 and V[0].cells[:3] == [3 * nx + 3, 5 * nx + 5, 4 * nx + 5]
+    assert 4 * nx + 3 not in V[0].cells and not is_riv[V[0].cells].any()
+    p = V[0].params[1]
+    assert p["area_m2"] == 3.5e6 and p["volume_m3"] == 1.5e7 and abs(p["depth"] - 1.5e7 / 3.5e6) < 1e-9
+    assert CA._planned_sites(d, river, rt, lc, ci, is_riv, h, zone_of, "other") == []
+
+
+def test_planned_retention_volume_scales_with_the_effect_coefficient():
+    v = CA.Variable("遊水地・上流", "retention", "上流", ["なし", "遊水地群"], [1, 2],
+                    [None, {"depth": 1.5e7 / 3.5e6, "area_m2": 3.5e6, "volume_m3": 1.5e7, "auto": True}])
+    e = CA.edits([v], [1], {"retention_effect": 0.5})[0]
+    assert e["volume_m3"] == 0.75e7 and abs(e["depth"] - 0.5 * 1.5e7 / 3.5e6) < 1e-9 and e["area_m2"] == 3.5e6

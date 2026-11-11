@@ -1,0 +1,8 @@
+初期行動の候補: 評価した組合せ 318・Pareto 15（標準値の世界）
+Adaptive DAPP（予測と学習）: 初期行動 5・ルール 12（全探索）・探索シナリオ 16 × seed 2・評価シナリオ 48
+  1/5 初期行動 施策なし: front 3（Coverage 19%〜40%）・seed 間の HV 比の最小 1.00（8 s）
+  2/5 初期行動 遊水地・上流 阿武隈川上流遊水地群（350 ha, 1500 万m³） + 田んぼダム・上流 100% + 田んぼダム・: front 2（Coverage 48%〜48%）・seed 間の HV 比の最小 1.00（6 s）
+  3/5 初期行動 田んぼダム・上流 100%: front 3（Coverage 40%〜42%）・seed 間の HV 比の最小 1.00（6 s）
+  4/5 初期行動 田んぼダム・上流 50%: front 3（Coverage 27%〜40%）・seed 間の HV 比の最小 1.00（7 s）
+  5/5 初期行動 堤防・中流 +2 m + 田んぼダム・上流 100% + 住宅対策・中流 嵩上げ +1.0 m + 雨水貯留（各戸）・中: front 3（Coverage 44%〜54%）・seed 間の HV 比の最小 0.85（7 s）
+完了: /Users/nakashima/rri-python/data/processed/dapp/abukuma_dapp_forecast_quick/results.json（35 s）

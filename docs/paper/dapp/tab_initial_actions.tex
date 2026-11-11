@@ -1,0 +1,30 @@
+\begin{table}[tbp]
+\centering\scriptsize\setlength{\tabcolsep}{2.6pt}
+\caption{Composition of the 16 candidate initial actions (baseline run \texttt{abukuma\_dapp\_adaptive}; ordered by initial cost). Levee: raised height [m]; paddy-field dam, afforestation, household storage: implementation rate [\%]; housing: R = raising +1 m, M = relocation; pumps: added drainage rate [mm/h]; public storage: depth [mm]; \checkmark: built. ★ Pareto, ◎ recommended (Table~\ref{tab:init})}
+\label{tab:initacts}
+\begin{tabular}{@{}lcccccccccccccccc@{}}
+\toprule
+Initial action & None & \#24 & \#25 & \#26 & \#53 & \#1 & \#69 & \#33 & \#2 & \#85 & \#64 & \#81 & \textbf{\#73} & \#5 & \#90 & \#36 \\
+ & ★ &  & ★ &  &  & ★ &  &  & ★ &  & ★ &  & ◎ & ★ & ★ & ★ \\
+Initial cost$^{\dagger}$ & 0 & 49 & 101 & 125 & 144 & 197 & 225 & 239 & 250 & 280 & 297 & 377 & 423 & 427 & 447 & 485 \\
+\midrule
+Levee, mid &  &  & +1 & +1 & +1 &  & +1 & +1 &  & +1 & +1 & +1 & +2 &  &  & +2 \\
+Levee, down &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & +2 \\
+Retention basin 3, down &  &  &  &  &  & \checkmark &  &  &  &  &  &  &  &  &  &  \\
+Paddy-field dam, up &  & 50 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 \\
+Paddy-field dam, mid &  & 100 &  & 50 & 50 &  & 50 & 50 & 50 & 50 & 50 & 50 & 50 & 50 & 50 & 50 \\
+Paddy-field dam, down &  & 50 &  & 50 & 50 & 100 & 50 & 50 & 100 & 50 & 100 & 100 & 100 & 100 & 100 & 50 \\
+Afforestation, mid &  &  & 50 & 50 & 50 &  & 100 & 100 &  & 100 & 50 & 50 &  &  &  &  \\
+Afforestation, down &  & 100 &  & 50 & 100 &  & 50 & 50 &  & 50 &  &  &  &  &  & 50 \\
+Housing, up &  &  & R & M & R &  & M & M & R & M & R & R & R & M & M &  \\
+Housing, down &  &  & R &  & R &  & R & R & M & R & M & M & M & M & M &  \\
+Urban pump, up &  &  &  &  &  &  & +10 &  &  & +10 &  &  &  &  &  &  \\
+Urban pump, down &  &  &  &  &  &  &  &  & +10 &  & +10 & +10 & +10 & +10 & +10 & +10 \\
+Agricultural pump, up &  &  &  &  &  &  &  &  &  &  &  &  &  &  & +3 &  \\
+Public storage, up &  &  &  &  &  &  &  & 30 &  & 30 &  &  & 30 & 30 & 30 & 30 \\
+Household storage, up &  &  & 50 & 50 & 50 &  & 50 &  & 50 &  & 50 & 50 & 50 & 50 & 50 &  \\
+Household storage, down &  &  &  &  &  &  &  &  &  &  &  & 50 & 50 & 50 &  &  \\
+\bottomrule
+\end{tabular}
+\par\footnotesize\raggedright $^{\dagger}$100 M JPY. up/mid/down: upstream/midstream/downstream zone. Retention basin 3 is one of the automatically selected downstream sites of exploration v2 (replaced by the Upper Abukuma retention basins from v3).
+\end{table}

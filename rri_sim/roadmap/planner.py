@@ -289,16 +289,6 @@ class DAPPController:
                     v2100 = float(np.clip(vl + slope * (2100 - tl), *lim))
                     out.append({"kind": kind, "what": what, "observed": vl, "believed": bv, "new_2100": v2100, "old_2100": b[pk][-1][1]})
                     b[pk] = [q for q in b[pk] if q[0] < tl] + [[tl, vl], [2100, v2100]]
-            for k, e in obs["effects"].items():
-                kk = "raise" if k == "relocate" else k
-                h = self._series("eff_" + kk, tm, e)
-                if len(h) < 2:
-                    continue
-                ev = float(np.mean([q[1] for q in h[-2:]]))
-                be = bw.effect(kk, tm)
-                if abs(ev - be) > tol["effect_tol"]:
-                    out.append({"kind": "effect", "what": f"{cfg['measures'][kk]['label']}の効果", "observed": ev, "believed": be})
-                    b["eff0"][kk] = float(np.clip(ev, *bw.ranges[kk]))
             seen = {}
             for o in obs["phases"]:
                 seen.setdefault((o["kind"], o["phase"]), []).append(o["years"])

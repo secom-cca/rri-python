@@ -7,7 +7,7 @@ from what is observable, whether to act and which of the actions feasible now co
 
     monitor     observed ratio (last event's damage / exposed population ÷ target), projected ratio of the current state
                 (observed climate / exposure trends, surrogate, nominal effects) at the next decade + a typical lead time,
-                projected 2100 rain (trend of the observed rain, from rain_from_year)
+                projected 2100 rain (trend of the observed rain; runs before 11.11.6: only from rain_from_year)
     trigger     observed > rho, projected > rho, rain >= rain threshold (each monitor on or off)
     action      every action feasible now (actors.make_actors catalog: add / strengthen / change / scale back / reconvert one
                 measure; land fit and reconversion window by landuse.Transitions and sim.State, cost within the total budget)
@@ -24,6 +24,10 @@ not Pareto-optimal are kept).  For each initial action of the 11.9 run the best 
 initial actions are compared (Pareto: coverage, cost, Regret, remaining options) and with the 11.9 pathways on the same
 evaluation scenarios.  Reused without changes: robust (settings, scenarios, record, simulate), multi (Ctx: observation and
 batched projection; actor_tree), actors (action catalog), option_space (status of the options), sim.State, explore.nsga_mixed.
+
+Planning climate range (adaptive.planning, 11.11.6): the policies are searched, and the initial action chosen, on scenarios
+whose 2100 rain / sea-level rise lie in the range the planner considers; the evaluation stays on the common wide scenarios,
+split into inside / outside (above, below) the range.
 """
 from __future__ import annotations
 
@@ -46,11 +50,15 @@ from ..rdm import explore as EX
 from ..rdm.explore_scope import nondominated
 from ..roadmap import planner as PL
 from ..roadmap import run as RR
+from ..rdm.uncertainty import lhs
 from ..roadmap import sim as SM
+from ..roadmap import world as WD
 from ..roadmap.social import Social
 
 DAPP_DIR = RB.DAPP_DIR
 MONITORS = ("observed", "projected", "rain")
+LOCKIN_REASONS = ("irreversible_land_use", "land_use_conflict", "irreversible_measure")   # options lost for good (11.9.5)
+CLIMATE = ("rain_2100", "slr_2100")
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,14 @@ def seeds(P):
             Policy((False, True, False), mid, P["rain_grid"][-1], 2.0, 1.0, 0.0, P["horizon_grid"][0], 1, P["scale_back_grid"][-1])]
 
 
+def _noise(world, tag, t):
+    """Standard normal draw of a world (common random numbers); 0 for the planner's belief."""
+    import zlib
+    if world.p.get("deterministic"):
+        return 0.0
+    return float(np.random.default_rng([world.p["seed"], zlib.crc32(tag.encode()), int(round(t * 10))]).normal())
+
+
 # ------------------------------------------------------------------ the controller of one pathway
 class Controller:
     def __init__(self, A, init, policy, s):
@@ -124,7 +140,7 @@ class Controller:
             tl, vl, sl = PL.DAPPController._trend(self.hist[key], self.A.y0, v0, self.A.window)
             out[key] = vl + sl * (tau - tl)
         if self.A.forecast_noise:                                     # forecast error of the projected rain increase
-            e = self.A.worlds[self.s].noise(f"forecast{int(tau)}", self.t)
+            e = _noise(self.A.worlds[self.s], f"forecast{int(tau)}", self.t)
             out["rain"] = 1 + (out["rain"] - 1) * (1 + self.A.forecast_noise * e)
         return out
 
@@ -250,7 +266,7 @@ class Model:
         self.y0, self.y1, self.step, self.estep = y["start"], y["end"], y["decision_step"], y["eval_step"]
         self.window = net.rc["detect"].get("trend_window", 3)
         self.from_year = net.R["targets"]["from_year"]
-        self.rain_from = self.P["rain_from_year"]
+        self.rain_from = self.P.get("rain_from_year") or self.y0     # abolished (11.11.6); kept for the runs that set it
         self.forecast_noise = float((AD.get("sensitivity") or {}).get("forecast_noise", 0.0))
         tg = {k: net.R["targets"][k] for k in ("damage_ratio", "pop_ratio")}
         MA = {"actors": {"流域": {"label": "流域", "measures": [v["name"] for v in net.T.V], "metric": "basin", "targets": tg,
@@ -359,6 +375,65 @@ def search(M, g0, scen, AD, seed, log):
     return memo, chosen
 
 
+# ------------------------------------------------------------------ planning climate range (11.11.6)
+def planning_spec(AD, F):
+    """adaptive.planning -> {range, label, rain_2100: [lo, hi], slr_2100: [lo, hi]} (None: the 11.11 setting).  A preset fills
+    the bounds from adaptive.planning_ranges; "custom" takes them as given, inside the factor range of docs/13."""
+    pl = AD.get("planning")
+    if not pl:
+        return None
+    key = pl.get("range", "custom")
+    pre = AD["planning_ranges"].get(key) if key != "custom" else None
+    if key != "custom" and not isinstance(pre, dict):
+        raise ValueError(f"unknown planning range {key}")
+    out = {"range": key, "label": pre["label"] if pre else "Custom"}
+    for k in CLIMATE:
+        lo, hi = [float(v) for v in (pre[k] if pre else pl[k])]
+        if not F[k]["low"] - 1e-9 <= lo <= hi <= F[k]["high"] + 1e-9:
+            raise ValueError(f"planning {k} must satisfy {F[k]['low']} <= lo <= hi <= {F[k]['high']}")
+        out[k] = [lo, hi]
+    return out
+
+
+def planning_scenarios(rc, R, n, seed, plan):
+    """Search scenarios: robust.scenarios (LHS over the same groups and seed) with the 2100 rain and sea-level rise drawn inside
+    the planning range (common random numbers across ranges; the other factors are as for the 11.11 run)."""
+    F = WD.factors(rc)
+    names = list(F)
+    Z = np.tile(WD.unit_nominal(F), (n, 1))
+    vary = [j for j, k in enumerate(names) if F[k]["group"] in R["scenarios"]["groups"]]
+    Z[:, vary] = lhs(n, len(vary), np.random.default_rng(seed + 601))
+    for k in CLIMATE:
+        j, f = names.index(k), F[k]
+        lo, hi = [(v - f["low"]) / ((f["high"] - f["low"]) or 1.0) for v in plan[k]]
+        Z[:, j] = lo + Z[:, j] * (hi - lo)
+    return [WD.make_world(rc, z, seed * 1000 + s) for s, z in enumerate(Z)]
+
+
+def in_range(clim, plan):
+    """Evaluation scenarios (2100 rain, sea-level rise) -> 0 inside the planning range, +1 above (a harsher climate in either),
+    -1 below.  Without a planning range all are inside."""
+    if not plan:
+        return np.zeros(len(clim), int)
+    lo = np.array([plan[k][0] for k in CLIMATE]) - 1e-9
+    hi = np.array([plan[k][1] for k in CLIMATE]) + 1e-9
+    return np.where((clim > hi).any(1), 1, np.where((clim < lo).any(1), -1, 0))
+
+
+def pick(table, M, tol, pareto, recommended):
+    """Pareto (coverage, mean cost, max Regret, remaining options) of the initial actions and the recommended one: the
+    cheapest within the coverage tolerance of the best Pareto one."""
+    Fm = np.array([[-m["coverage"], m["mean_cost"], m["max_regret"], -m["remaining_mean"]] for m in M])
+    nd = nondominated(Fm)
+    for r, ok in zip(table, nd):
+        r[pareto] = bool(ok)
+    par = [k for k in range(len(table)) if nd[k]]
+    top = max(M[k]["coverage"] for k in par)
+    k = min((k for k in par if M[k]["coverage"] >= top - tol - 1e-12), key=lambda k: M[k]["mean_cost"])
+    for j, r in enumerate(table):
+        r[recommended] = j == k
+
+
 # ------------------------------------------------------------------ pipeline
 def option_ts(M, recs, years):
     nb = max(int(M.space.base.sum()), 1)
@@ -386,8 +461,15 @@ def run(cfg=None, out_dir=None, phys=None, log=print, robust_dir=None):
     sens = apply_sensitivity(net, AD)
     n_eval = min(int(AD.get("n_eval") or len(net.worlds)), len(net.worlds))
     S = AD["search"]
-    Rs = dict(net.R, scenarios=dict(net.R["scenarios"], n=int(S["n_scenarios"])))
-    search_worlds = RB.scenarios(net.rc, Rs, cfg["seed"] + 313)[3]           # scenarios of their own, never the evaluation ones
+    plan = planning_spec(AD, F)
+    if plan:
+        AD["policy"].pop("rain_from_year", None)                               # abolished: the planning range replaces it
+        search_worlds = planning_scenarios(net.rc, net.R, int(S["n_scenarios"]), cfg["seed"] + 313, plan)
+    else:
+        Rs = dict(net.R, scenarios=dict(net.R["scenarios"], n=int(S["n_scenarios"])))
+        search_worlds = RB.scenarios(net.rc, Rs, cfg["seed"] + 313)[3]       # scenarios of their own, never the evaluation ones
+    clim = np.array([[WD.values_from_unit(z, F)[k] for k in ("rain_2100", "slr_2100")] for z in Z[:n_eval]])
+    where = in_range(clim, plan)                                               # evaluation scenarios: in / above / below the range
     worlds = list(net.worlds[:n_eval]) + list(search_worlds)
     M = Model(cfg, net, worlds)
     scen, scen_s = list(range(n_eval)), list(range(n_eval, len(worlds)))
@@ -398,8 +480,12 @@ def run(cfg=None, out_dir=None, phys=None, log=print, robust_dir=None):
     CF.save(cfg, out / "config.json")
     log(f"Adaptive DAPP: 初期行動 {len(inits)}（{AD['robust_run']} の初期施策）・行動の候補 {len(M.act.catalog)}・"
         f"評価シナリオ {n_eval}・探索シナリオ {len(scen_s)}・選択肢の基準集合 {int(M.space.base.sum())}")
+    if plan:
+        log(f"  計画時の気候の範囲 {plan['label']}: 2100年の降雨 ×{plan['rain_2100'][0]:.2f}〜{plan['rain_2100'][1]:.2f}・"
+            f"海面 {plan['slr_2100'][0]:.2f}〜{plan['slr_2100'][1]:.2f} m（評価シナリオのうち範囲内 {int((where == 0).sum())}・"
+            f"上 {int((where > 0).sum())}・下 {int((where < 0).sum())}）")
     years = SM.decision_years(M.rc)
-    chosen, fronts = {}, {}
+    chosen, fronts, planned = {}, {}, {}
     fixed = fixed_policies(AD)
     if fixed:
         inits = [i for i in inits if i in fixed]
@@ -411,7 +497,7 @@ def run(cfg=None, out_dir=None, phys=None, log=print, robust_dir=None):
         g0 = tuple(int(a) for a in net.nodes[i])
         t1 = time.time()
         memo, p = search(M, g0, scen_s, AD, cfg["seed"] + 811 + k, log)
-        chosen[i] = p
+        chosen[i], planned[i] = p, memo[p]
         F_ = np.array([objectives(m) for m in memo.values()])
         keys = list(memo)
         fronts[i] = [{"policy": keys[j].describe(), "coverage": float(memo[keys[j]]["met"].mean()), "mean_cost": float(memo[keys[j]]["cost"].mean()),
@@ -433,14 +519,20 @@ def run(cfg=None, out_dir=None, phys=None, log=print, robust_dir=None):
             B[i].append(r)
     best = np.max([[r["U"] for r in R] for R in list(A.values()) + list(B.values())], axis=0)
     lock = {r["node"]: r["lockin"].get("options") for r in ev9["table"]}
+    n50 = years.index(2050) if 2050 in years else len(years) // 2
+    part = {"in": where == 0, "out": where != 0, "above": where > 0, "below": where < 0}
 
     def row(R):
         m = summarise(R)
         reg = best - m["U"]
         O = option_ts(M, R, years)
-        n50 = years.index(2050) if 2050 in years else len(years) // 2
+        sub = {f"coverage_{k}": (float(m["met"][w].mean()) if w.any() else None) for k, w in part.items()}
+        sub.update({f"max_regret_{k}": (float(reg[w].max()) if w.any() else None) for k, w in part.items() if k in ("in", "out")})
+        sub.update({f"mean_cost_{k}": (float(m["cost"][w].mean()) if w.any() else None) for k, w in part.items() if k in ("in", "out")})
+        lk = [sum(O["loss"][q][n] for q in LOCKIN_REASONS) for n in range(len(years))]
         return {"coverage": float(m["met"].mean()), "mean_cost": float(m["cost"].mean()), "max_regret": float(reg.max()),
-                "mean_regret": float(reg.mean()), "mean_U": float(m["U"].mean()),
+                "mean_regret": float(reg.mean()), "mean_U": float(m["U"].mean()), **sub,
+                "lockin_2050": float(lk[n50]), "lockin_end": float(lk[-1]),
                 "mean_damage_ratio": float(np.mean([np.mean([p[1] for p in r["series"] if p[0] >= 2030]) for r in R])) if "series" in R[0] else None,
                 "remaining_2050": O["remaining"]["mean"][n50], "remaining_mean": float(np.mean(O["remaining"]["mean"])),
                 "option_loss_2050": float(sum(O["loss"][q][n50] for q in OS.REASONS)), "n_acts": float(np.mean([r["n_acts"] for r in R])),
@@ -450,13 +542,18 @@ def run(cfg=None, out_dir=None, phys=None, log=print, robust_dir=None):
         a, b = row(A[i]), row(B[i])
         table.append({"node": i, "label": RB.node_info(net, i)["label"], "initial_cost": float(net.mat["initial"][0, i]),
                       "lockin": lock.get(i), "adaptive": a, "robust": b, "policy": chosen[i].describe(), "front": fronts[i]})
-    Fm = np.array([[-r["adaptive"]["coverage"], r["adaptive"]["mean_cost"], r["adaptive"]["max_regret"], -r["adaptive"]["remaining_mean"]] for r in table])
-    for j in np.flatnonzero(nondominated(Fm)):
-        table[j]["pareto"] = True
-    par = [r for r in table if r.get("pareto")]
-    top = max(r["adaptive"]["coverage"] for r in par)
-    rec_ = min((r for r in par if r["adaptive"]["coverage"] >= top - AD["choose"]["coverage_tolerance"] - 1e-12), key=lambda r: r["adaptive"]["mean_cost"])
-    rec_["recommended"] = True
+    tol = AD["choose"]["coverage_tolerance"]
+    pick(table, [r["adaptive"] for r in table], tol, "pareto", "recommended")       # on the evaluation scenarios (11.11)
+    if plan and len(planned) == len(inits):
+        # the planner's view: the initial actions compared on the planning scenarios (search), never on the evaluation set
+        bestp = np.max([planned[i]["U"] for i in inits], axis=0)
+        for r in table:
+            m = planned[r["node"]]
+            r["planning"] = {"coverage": float(m["met"].mean()), "mean_cost": float(m["cost"].mean()),
+                             "max_regret": float((bestp - m["U"]).max()), "remaining_mean": float(m["remaining"].mean())}
+        for r in table:                                                       # hindsight: the choice on the evaluation set
+            r["pareto_eval"], r["recommended_eval"] = r.pop("pareto", False), r.pop("recommended", False)
+        pick(table, [r["planning"] for r in table], tol, "pareto", "recommended")
     # pathway map (trie over the actions; branches arise from the observations) and the decision rules seen at the branches
     trees = {}
     for i in inits:
@@ -464,10 +561,11 @@ def run(cfg=None, out_dir=None, phys=None, log=print, robust_dir=None):
         trees[str(i)] = actor_tree(SimpleNamespace(y0=M.y0), M.act, recs)
     res = {"mode": "adaptive", "name": AD["name"], "created": time.strftime("%Y-%m-%d %H:%M:%S"), "config": cfg, "robust_run": AD["robust_run"],
            "years": years, "settings": {"policy": AD["policy"], "search": S, "targets": net.R["targets"], "budget": net.rc["budget"]},
-           "sensitivity": sens, "gui_inputs": AD.get("gui_inputs"),
+           "sensitivity": sens, "gui_inputs": AD.get("gui_inputs"), "planning": plan,
+           "climate": {"in": int(part["in"].sum()), "above": int(part["above"].sum()), "below": int(part["below"].sum())},
            "catalog": M.act.labels, "catalog_lead": [round(x, 1) for x in M.act.lead], "n_eval": n_eval, "n_search": len(scen_s),
            "n_base": int(M.space.base.sum()), "reasons": list(OS.REASONS), "reason_labels": OS.LABELS,
-           "worlds": [{"rain_2100": w.p["rain_pts"][-1][1], "slr_2100": w.p["slr_pts"][-1][1]} for w in worlds[:n_eval]],
+           "worlds": [{"rain_2100": float(c[0]), "slr_2100": float(c[1]), "range": int(k)} for c, k in zip(clim, where)],
            "table": table, "trees": trees,
            "records": {str(i): [{k: r[k] for k in ("s", "met", "first_violation", "U", "cost_pv", "series", "cost_path", "events")}
                                 | {"remaining": np.round(r["remaining"], 4).tolist()} for r in A[i]] for i in inits}}
@@ -485,7 +583,7 @@ def apply_sensitivity(net, AD):
     rain, sea level, exposure - the trends), trend window of the projections.  Returns the effective values."""
     s = AD.get("sensitivity") or {}
     mon, rc = net.rc["monitoring"], net.rc
-    base = {k: mon[k] for k in ("risk_noise", "rain_noise", "slr_noise", "exposure_noise")}
+    base = {k: mon.get(k, 0.0) for k in ("risk_noise", "rain_noise", "slr_noise", "exposure_noise")}   # 0 since 11.12 (no observation error)
     mon["risk_noise"] = base["risk_noise"] * float(s.get("noise_damage", 1.0))
     for k in ("rain_noise", "slr_noise", "exposure_noise"):
         mon[k] = base[k] * float(s.get("noise_climate", 1.0))
@@ -501,7 +599,7 @@ def apply_sensitivity(net, AD):
     return {"targets": {k: net.R["targets"][k] for k in ("damage_ratio", "pop_ratio", "from_year")},
             "noise_damage": float(s.get("noise_damage", 1.0)), "noise_climate": float(s.get("noise_climate", 1.0)),
             "monitoring": {k: mon[k] for k in base}, "trend_window": int(rc["detect"].get("trend_window", 3)),
-            "rain_from_year": AD["policy"]["rain_from_year"], "forecast_noise": float(s.get("forecast_noise", 0.0)),
+            "rain_from_year": AD["policy"].get("rain_from_year"), "forecast_noise": float(s.get("forecast_noise", 0.0)),
             "mode": "fixed" if AD.get("fixed_from") else "search"}
 
 
@@ -518,8 +616,9 @@ def fixed_policies(AD):
 
 def gui_config(cfg, inputs, mode="fixed", size="fast"):
     """Settings of a GUI recalculation from a displayed run: targets {damage_ratio, pop_ratio, from_year}, noise_damage /
-    noise_climate (x the observation noise), trend_window, rain_from_year, forecast_noise; mode "fixed" re-evaluates the
-    displayed run's recommended rules, "search" searches again at a size (adaptive.gui.sizes).  Named <base>_gui_<hash>."""
+    noise_climate (x the observation noise), trend_window, forecast_noise, planning {range, rain_2100, slr_2100}; mode "fixed"
+    re-evaluates the displayed run's recommended rules, "search" searches again at a size (adaptive.gui.sizes) for the
+    planning climate range (default Low-High).  Named <base>_gui_<hash>."""
     cfg = CF.load(copy.deepcopy(cfg))
     AD = cfg["adaptive"]
     base = (AD.get("gui_inputs") or {}).get("base", AD["name"])
@@ -531,7 +630,8 @@ def gui_config(cfg, inputs, mode="fixed", size="fast"):
             raise ValueError(f"{k} must be in [0.3, 5]")
     if tg["from_year"] is not None and not 2020 <= int(tg["from_year"]) <= 2090:
         raise ValueError("from_year must be in [2020, 2090]")
-    s["targets"] = {k: v for k, v in tg.items() if v is not None}
+    t0 = cfg["robust"]["targets"]                                              # values equal to the run's own: not a change
+    s["targets"] = {k: v for k, v in tg.items() if v is not None and not (k in t0 and abs(float(v) - float(t0[k])) < 1e-9)}
     for k, lo, hi in (("noise_damage", 0, 10), ("noise_climate", 0, 10), ("forecast_noise", 0, 2)):
         if inputs.get(k) is not None:
             if not lo <= float(inputs[k]) <= hi:
@@ -541,20 +641,23 @@ def gui_config(cfg, inputs, mode="fixed", size="fast"):
         if not 2 <= int(inputs["trend_window"]) <= 8:
             raise ValueError("trend_window must be in [2, 8]")
         s["trend_window"] = int(inputs["trend_window"])
-    if inputs.get("rain_from_year") is not None:
-        AD["policy"]["rain_from_year"] = int(inputs["rain_from_year"])
     AD["sensitivity"] = s
-    if mode == "fixed":
+    if mode == "fixed":                       # the rules (and the source's rain_from_year, if any) as they were searched
         AD["fixed_from"] = src
     elif mode == "search":
         AD.pop("fixed_from", None)
+        AD["policy"].pop("rain_from_year", None)                              # abolished (11.11.6)
         if size not in AD["gui"]["sizes"]:
             raise ValueError(f"unknown size {size}")
         cfg["adaptive"] = AD = CF._merge(AD, AD["gui"]["sizes"][size])
+        pl = inputs.get("planning") or {"range": "low_high"}
+        AD["planning"] = {"range": pl.get("range", "custom")} | ({k: [float(v) for v in pl[k]] for k in CLIMATE} if pl.get("range") == "custom" else {})
+        planning_spec(AD, WD.factors(RB.model_cfg(cfg, cfg["robust"])))                                # validate
     else:
         raise ValueError(f"unknown mode {mode}")
     key = json.dumps({"base": base, "mode": mode, "size": size if mode == "search" else None, "rules": AD.get("fixed_from"), "s": s,
-                      "rain_from": AD["policy"]["rain_from_year"], "n_eval": AD.get("n_eval")}, sort_keys=True)
+                      "rain_from": AD["policy"].get("rain_from_year"), "n_eval": AD.get("n_eval"),
+                      **({"planning": AD.get("planning")} if mode == "search" else {})}, sort_keys=True)
     AD["gui_inputs"] = {"base": base, "mode": mode, "size": size if mode == "search" else None, "rules_from": AD.get("fixed_from")}
     AD["name"] = f"{base}_gui_{hashlib.sha1(key.encode()).hexdigest()[:8]}"
     return cfg
@@ -580,6 +683,17 @@ def recalculate(cfg, phys=None, progress=None, out_dir=None, robust_dir=None):
     return {"name": cfg["adaptive"]["name"]}
 
 
+def recalculate_many(cfgs, phys=None, progress=None, root=None):
+    """Several GUI runs in a row (e.g. every planning range for one target); runs already done are skipped."""
+    todo = [c for c in cfgs if not (Path(root or DAPP_DIR) / c["adaptive"]["name"] / "summary.json").exists()]
+    for k, c in enumerate(todo):
+        def sub(f, m, k=k):
+            if progress:
+                progress((k + f) / len(todo), f"{k + 1}/{len(todo)} {(c['adaptive'].get('planning') or {}).get('range', '')}: {m}")
+        recalculate(c, phys, sub, out_dir=Path(root) / c["adaptive"]["name"] if root else None)
+    return {"name": cfgs[0]["adaptive"]["name"], "names": [c["adaptive"]["name"] for c in cfgs]}
+
+
 def summary(res):
     T = res["table"]
     rec = next((r for r in T if r.get("recommended")), T[0])
@@ -587,11 +701,20 @@ def summary(res):
     st = res["settings"]
     sens = res.get("sensitivity") or {"targets": {k: st["targets"][k] for k in ("damage_ratio", "pop_ratio", "from_year")},  # runs before 11.11.5
                                       "noise_damage": 1.0, "noise_climate": 1.0, "trend_window": 3, "forecast_noise": 0.0,
-                                      "rain_from_year": st["policy"]["rain_from_year"], "mode": "search"}
+                                      "rain_from_year": st["policy"].get("rain_from_year"), "mode": "search"}
+    a = rec["adaptive"]
+    ev = next((r for r in T if r.get("recommended_eval")), None)
     return {"name": res["name"], "created": res["created"], "base": gi.get("base", res["name"]), "mode": sens.get("mode", "search"),
             "size": gi.get("size"), "n_eval": res["n_eval"], "n_search": res["n_search"], "sensitivity": sens,
-            "recommended": {"node": rec["node"], "coverage": rec["adaptive"]["coverage"], "mean_cost": rec["adaptive"]["mean_cost"],
-                            "robust_coverage": rec["robust"]["coverage"]},
+            "planning": res.get("planning"), "climate": res.get("climate"),
+            "recommended": {"node": rec["node"], "label": rec["label"], "initial_cost": rec["initial_cost"], "coverage": a["coverage"],
+                            "mean_cost": a["mean_cost"], "robust_coverage": rec["robust"]["coverage"], "max_regret": a["max_regret"],
+                            "mean_regret": a["mean_regret"], "remaining_mean": a["remaining_mean"], "remaining_2050": a["remaining_2050"],
+                            "lockin": rec.get("lockin"), "lockin_2050": a.get("lockin_2050"), "lockin_end": a.get("lockin_end"),
+                            **{k: a.get(k) for k in ("coverage_in", "coverage_out", "coverage_above", "coverage_below", "max_regret_in",
+                                                     "max_regret_out", "mean_cost_in", "mean_cost_out")},
+                            "planning": rec.get("planning"), "policy": rec["policy"]},
+            "recommended_eval": ev and {"node": ev["node"], "coverage": ev["adaptive"]["coverage"], "mean_cost": ev["adaptive"]["mean_cost"]},
             "mean_coverage": {"adaptive": float(np.mean([r["adaptive"]["coverage"] for r in T])), "robust": float(np.mean([r["robust"]["coverage"] for r in T]))},
             "mean_cost": {"adaptive": float(np.mean([r["adaptive"]["mean_cost"] for r in T])), "robust": float(np.mean([r["robust"]["mean_cost"] for r in T]))},
             "mean_remaining": {"adaptive": float(np.mean([r["adaptive"]["remaining_mean"] for r in T])), "robust": float(np.mean([r["robust"]["remaining_mean"] for r in T]))},
@@ -606,7 +729,7 @@ def summaries(base, root=None):
         if not (d.name == base or d.name.startswith(base + "_gui_")) or not (d / "results.json").exists():
             continue
         f = d / "summary.json"
-        if not f.exists():
+        if not f.exists() or "climate" not in json.loads(f.read_text(encoding="utf-8")):   # written before 11.11.6
             res = json.loads((d / "results.json").read_text(encoding="utf-8"))
             if res.get("mode") != "adaptive":
                 continue

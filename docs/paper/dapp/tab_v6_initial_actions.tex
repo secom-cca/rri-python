@@ -1,0 +1,25 @@
+\begin{table}[tbp]
+\centering\scriptsize\setlength{\tabcolsep}{2.4pt}
+\caption{Composition of the 15 candidate initial actions (Pareto-efficient under the planner's nominal values; run \texttt{abukuma\_dapp\_forecast\_v6}). Levee: raised height [m]; paddy-field dam, forest management, household storage: implementation rate [\%]; housing: R = raising +1 m, M = relocation; \checkmark: built}
+\label{tab:v6inits}
+\begin{tabular}{@{}lccccccccccccccc@{}}
+\toprule
+Initial action & \#0 & \#1 & \#2 & \#3 & \#4 & \#5 & \#6 & \#7 & \#8 & \#9 & \#10 & \#11 & \#12 & \#13 & \#14 \\
+Initial cost$^{\dagger}$ & 0 & 483 & 107 & 321 & 12 & 345 & 148 & 20 & 467 & 234 & 390 & 384 & 237 & 84 & 161 \\
+EAD, PV$^{\dagger}$ (nominal) & 16.4k & 7.1k & 9.7k & 11.8k & 13.4k & 9.3k & 11.8k & 11.6k & 8.4k & 10.0k & 8.4k & 9.9k & 11.4k & 11.2k & 10.5k \\
+\midrule
+Levee, mid &  &  &  & +2 &  &  &  &  &  &  &  &  &  &  &  \\
+Levee, down &  & +1 &  &  &  &  &  &  & +1 &  & +1 & +1 &  &  &  \\
+Paddy-field dam, up &  & 100 & 100 & 100 & 50 & 100 & 100 & 100 & 100 & 100 & 100 & 50 & 100 & 100 & 100 \\
+Housing, up &  & R & R &  &  & R &  &  &  & R &  &  &  &  & R \\
+Paddy-field dam, mid &  & 100 & 100 & 100 & 100 & 100 & 100 & 50 & 100 & 100 &  & 100 & 100 & 100 & 100 \\
+Forest management, mid &  &  &  &  &  & 50 &  &  &  &  &  &  &  &  &  \\
+Housing, mid &  &  &  & M &  &  & M &  & M & M &  &  & M & M & M \\
+Paddy-field dam, down &  & 100 & 50 &  &  & 100 &  &  &  & 50 &  &  &  &  &  \\
+Household storage, up &  &  &  &  &  &  & 50 &  &  & 50 &  &  & 100 &  &  \\
+Urban pump, mid &  &  &  & \checkmark &  &  & \checkmark &  & \checkmark & \checkmark &  &  & \checkmark &  & \checkmark \\
+Household storage, mid &  & 100 & 100 & 50 &  &  &  &  &  & 100 &  &  & 100 & 50 & 50 \\
+\bottomrule
+\end{tabular}
+\par\footnotesize\raggedright $^{\dagger}$100 M JPY. up/mid/down: upstream/midstream/downstream zone.
+\end{table}

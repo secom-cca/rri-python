@@ -123,8 +123,7 @@ def main_job(task):
             "regimes": w.p["regimes"], "events": events, "t_star": t_star, "records": recs,
             "oracle": None if not oracle else {"U": oracle["U"], "actions": oracle["actions"]},
             "best": best, "blank_coverage": {str(T): float(b.mean()) for T, b in blank.items()},
-            "world": {"rain_pts": w.p["rain_pts"], "slr_pts": w.p["slr_pts"], "asset_pts": w.p["asset_pts"], "pop_pts": w.p["pop_pts"],
-                      "eff0": w.p["eff0"], "tech_gain": w.p["tech_gain"], "tech_year": w.p["tech_year"]}}
+            "world": {"rain_pts": w.p["rain_pts"], "slr_pts": w.p["slr_pts"], "asset_pts": w.p["asset_pts"], "pop_pts": w.p["pop_pts"]}}
 
 
 def morris_job(task):

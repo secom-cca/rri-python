@@ -59,16 +59,18 @@ DEFAULT = {
     "stakeholder_atp_ratio": {"国": 1.2, "上流自治体": 1.1, "下流自治体": 1.0, "住民": 1.0},
     # ---- Robust DAPP (robust.py, docs/11 11.9): pathways network on the exploration surrogate, observation-based triggers
     "robust": {
-        "name": "abukuma_dapp_robust",
-        "explore_run": "abukuma_explore_v2",          # surrogate + cost table (docs/12; roadmap --prepare once)
+        "name": "abukuma_dapp_robust_v4",
+        # surrogate + cost table (docs/12; roadmap --prepare once).  v3: the 遊水地 option is the planned 阿武隈川上流遊水地群
+        # (one variable 遊水地・上流, 350 ha, 1,500万m³).  v4: + its effect coefficient applied, + 80 training points with 1-3
+        # measures.  Runs before: v2 (abukuma_dapp_robust / _multi / _adaptive), v3 (_v3; the 遊水地 coefficient had no effect)
+        "explore_run": "abukuma_explore_v4",
         # settings of the implementation model shared with docs/13 (rri_sim.roadmap.config): lead times (consensus + build /
         # diffuse / mature, uncertain phases {nominal, low, high}), change_cost_fraction, reversible, levels.  Overrides here.
         "model": {
             "years": {"start": 2020, "end": 2100, "decision_step": 10, "eval_step": 5},
             "budget": {"total_oku": 2000.0, "per_decade_oku": 500.0, "status": "仮定",
                        "basis": "初期費用（割引前）の総額と10年ごとの上限（docs/11 と同じ）。超過分は次の意思決定へ繰り越す"},
-            "measures": {"forest": {"reconvert": {"allowed": True, "max_age_years": 10, "cost_fraction": 0.5, "status": "仮定",
-                                                  "basis": "植栽後10年以内なら伐採して農地に戻せる（植栽費の半分を要する）。以後は森林として固定（保安林等）"}}},
+            # (forest reconversion of afforested farmland: removed with afforestation in 11.12)
             # the social process of docs/13 is not modelled here: no consensus failures, full adoption, no coordination cost
             "participation": {"fail_scale": {"nominal": 0.0, "low": 0.0, "high": 0.0},
                               "coord_cost_scale": {"nominal": 0.0, "low": 0.0, "high": 0.0}, "consensus_cost_oku_yr": 0.0,
@@ -112,7 +114,7 @@ DEFAULT = {
     # ---- Multi-Actor Robust DAPP (multi.py, actors.py, docs/11 11.10): conditional strategies of single measures per actor.
     # The model, land use, scenarios, targets of the basin, weights and PRIM come from "robust" (robust_overrides here).
     "multi": {
-        "name": "abukuma_dapp_multi",
+        "name": "abukuma_dapp_multi_v4",
         # Single: one decision maker for all the measures with the summed per-decade capacity (one pooled budget, no subsidy
         # routing).  It keeps the actors' measure groups as sub-strategies (own lists, switch and trigger on the group's
         # metric) and the Joint objectives, so that every Joint strategy is also a Single strategy: the difference between
@@ -123,11 +125,11 @@ DEFAULT = {
         # ("basin" = damage and exposed population of the basin; a zone = event damage of that zone) and target (ratio to no
         # measures, current climate; ATP and trigger of the actor), utility weights (Regret).  Small model: 4 measures each.
         "actors": {
-            "国": {"label": "国（河川管理者）", "measures": ["堤防・上流", "堤防・下流", "遊水地1・下流", "遊水地2・下流"],
+            "国": {"label": "国（河川管理者）", "measures": ["堤防・上流", "堤防・下流", "遊水地・上流"],
                   "budget": {"total_oku": None, "per_decade_oku": 400.0}, "metric": "basin",
                   "targets": {"damage_ratio": 1.2, "pop_ratio": 1.5},
                   "weights": {"damage": 0.45, "pop": 0.15, "cost": 0.25, "ecology": 0.1, "agriculture": 0.05}},
-            "上流自治体": {"label": "上流自治体", "measures": ["田んぼダム・上流", "森林化・上流", "住宅対策・上流", "雨水貯留（公共）・上流"],
+            "上流自治体": {"label": "上流自治体", "measures": ["田んぼダム・上流", "森林整備・上流", "住宅対策・上流", "雨水貯留（公共）・上流"],
                       "budget": {"total_oku": None, "per_decade_oku": 120.0}, "metric": "上流", "targets": {"damage_ratio": 1.2},
                       "weights": {"damage": 0.5, "cost": 0.3, "ecology": 0.1, "agriculture": 0.1}},
             "下流自治体": {"label": "下流自治体", "measures": ["田んぼダム・下流", "住宅対策・下流", "排水ポンプ（下水道）・下流", "雨水貯留（公共）・下流"],
@@ -167,14 +169,14 @@ DEFAULT = {
     # ---- Adaptive DAPP (adaptive.py, docs/11 11.11): state-dependent decision rules over single-measure actions, searched
     # per initial action of a Robust DAPP run (its settings, scenarios and initial actions; compared with its pathways)
     "adaptive": {
-        "name": "abukuma_dapp_adaptive",
-        "robust_run": "abukuma_dapp_robust",          # 11.9 run: settings, evaluation scenarios, initial actions, comparison
+        "name": "abukuma_dapp_adaptive_v4",
+        "robust_run": "abukuma_dapp_robust_v4",          # 11.9 run: settings, evaluation scenarios, initial actions, comparison
         "inits": "all",                                 # "all" initial actions of that run or "promising"
         # policy genome (grids): which indicators are monitored, when to act, how the next action is chosen
         "policy": {
             "rho_grid": [0.7, 0.8, 0.9, 1.0, 1.1],      # act when the observed / projected ratio / target exceeds rho
-            "rain_grid": [1.08, 1.12, 1.16, 1.20, 1.24],  # act when the projected 2100 rain (observed trend) reaches it (from rain_from_year)
-            "rain_from_year": 2050,                     # the rain trend says little before (docs/11 11.10.1)
+            "rain_grid": [1.08, 1.12, 1.16, 1.20, 1.24],  # act when the projected 2100 rain (observed trend) reaches it
+            # (rain_from_year, "use the rain trend only from that year", is abolished; runs before 11.11.6 keep it in their config.json)
             "weight_grid": [0.0, 0.5, 1.0, 2.0],        # cost / irreversibility / lead-time weights of the action score
             "horizon_grid": [10, 20, 30],               # projected benefit of an action this many years after its completion
             "k_grid": [1, 2],                           # actions per decision
@@ -189,8 +191,67 @@ DEFAULT = {
         # noise of docs/13 monitoring), trend_window (observations in a trend), forecast_noise (relative error of the projected
         # rain increase; adaptive projections only).  Empty = the 11.9 run's values
         "sensitivity": {},
+        # planning climate range (11.11.6): the climate futures the DAPP is designed for (policy search + choice of the initial
+        # action), not the true future.  None = the 11.11 run (search scenarios over the whole range, choice on the evaluation
+        # scenarios).  {"range": key of planning_ranges or "custom", "rain_2100": [lo, hi], "slr_2100": [lo, hi]}.
+        # The evaluation stays on the common wide scenario set (11.9), split into inside / outside the planning range.
+        "planning": None,
+        "planning_ranges": {
+            "low": {"label": "Low only", "rain_2100": [1.00, 1.10], "slr_2100": [0.20, 0.38]},
+            "medium": {"label": "Medium only", "rain_2100": [1.10, 1.20], "slr_2100": [0.38, 0.54]},
+            "high": {"label": "High only", "rain_2100": [1.20, 1.30], "slr_2100": [0.54, 0.70]},
+            "low_high": {"label": "Low–High range", "rain_2100": [1.00, 1.30], "slr_2100": [0.20, 0.70]},
+            "status": "仮定", "basis": "2100年の降雨倍率・海面上昇の範囲（docs/13 の 1.0〜1.3・0.2〜0.7 m）を 2℃（×1.10・0.38 m）と 4℃（×1.20）で3つに区切る"},
         "gui": {"sizes": {"fast": {"search": {"n_scenarios": 12, "pop": 10, "gens": 3}},
                           "standard": {"search": {"n_scenarios": 24, "pop": 16, "gens": 6}}}},
+    },
+    # ---- Adaptive DAPP with forecasts and learning (forecast_dapp.py, docs/11 11.12; 1K-RRI surrogate without effect coefficients)
+    "forecast": {
+        "name": "abukuma_dapp_forecast_v6",
+        "explore_run": "abukuma_explore_v6",                 # v5 + events of other return periods (rain factor 0.35-1.5)
+        # implementation model (docs/13) as for the Robust DAPP: no consensus failures, full adoption, no coordination cost
+        "model": {
+            "years": {"start": 2020, "end": 2100, "decision_step": 10, "eval_step": 5},
+            "budget": {"total_oku": 2000.0, "per_decade_oku": 500.0, "status": "仮定",
+                       "basis": "初期費用（割引前）の総額と10年ごとの上限。超過分は次の意思決定へ繰り越す"},
+            "participation": {"fail_scale": {"nominal": 0.0, "low": 0.0, "high": 0.0},
+                              "coord_cost_scale": {"nominal": 0.0, "low": 0.0, "high": 0.0}, "consensus_cost_oku_yr": 0.0,
+                              "adoption": {k: [1.0, 1.0] for k in ("paddy_dam", "forest_mgmt", "raise", "relocate", "storage_private",
+                                                                  "floodproof", "evacuation")}},
+        },
+        "targets": {"damage_ratio": 1.2, "pop_ratio": 1.5, "from_year": 2030, "status": "仮定",
+                    "basis": "代表洪水の被害額・浸水人口を、現状（対策なし・現在気候）のそれぞれ 1.2 倍・1.5 倍まで。2030年から毎評価期に判定"},
+        # scenarios: worlds (roadmap.world) varying these groups (true 2100 climate, rain intensity, learning speed; exposure;
+        # implementation periods), LHS.  Evaluation set: n_eval; search sets: n_search each, one per seed (convergence check)
+        "scenarios": {"groups": ["climate", "landuse", "delays"], "n_eval": 256, "n_search": 64, "seeds": [11, 12, 13],
+                      "status": "仮定", "basis": "LHS の標本であり発生確率ではない"},
+        # step 1: initial actions = Pareto-efficient portfolios under the planner's nominal values (belief world, no uncertainty)
+        # objectives: initial cost, PV of the expected damage, mean exposed-population ratio; initial cost within max_cost_oku
+        "initial": {"pop": 96, "gens": 80, "p_mut": 0.15, "n_max": 16, "max_cost_oku": 500.0},
+        # step 2: decision rules (all combinations are evaluated: exhaustive search)
+        #   trigger : forecast ratio (expected over the forecast) at t + lookahead > rho  (ratio = max(damage / target, pop / target))
+        #   choice  : among actions that lower the forecast ratio, the largest net benefit = PV(avoided expected damage after
+        #             completion, expected over the forecast) - PV(cost); k actions per decision
+        #   wait    : 1 = compare acting now with deciding again after wait_step years with the better forecast (preposterior);
+        #             wait if that is worth more and the target is forecast to hold until a delayed action would be complete
+        "policy": {"rho_grid": [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2], "lookahead_grid": [10, 20, 30], "k_grid": [1, 2],
+                   "wait_grid": [0, 1], "wait_step": 10,
+                   # "target_nb": among the actions that restore the target at the look-ahead year, the largest net benefit
+                   # (none alone: the largest reduction of the expected ratio); "net_benefit": the largest net benefit
+                   "choice": "target_nb", "status": "仮定",
+                   "basis": "監視は将来予測だけ。行動の選択は便益（期待被害の減少の現在価値）と費用（現在価値）の比較。罰則項なし"},
+        # projection: surrogate on a climate grid (bilinear), nominal rain intensity, current exposure held; expectation over
+        # the forecast by a 3-point Gauss-Hermite rule on the 2100 values (rain and sea level moved together)
+        "projection": {"rain_grid": [round(0.35 + 0.05 * i, 2) for i in range(24)], "slr_grid": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                       "status": "仮定", "basis": "将来の暴露（資産・人口）は判断時点の値のまま。降雨と海面の予測誤差は完全相関とみなす"},
+        "chunk": 400,
+        # benefits: annual expected damage (治水経済調査マニュアル: 区間平均被害額 x 区間確率, summed from 1/2 to 1/200).  Event of
+        # return period T = the representative event (1/100) x ratio(T) x the climate's rain factor; ratio from the Gumbel fit
+        # (L-moments) of annual maximum daily rainfall at the 11 AMeDAS stations in the basin (median; rri_sim.frequency,
+        # data/processed/rainfall_frequency_abukuma.json).  The target (Coverage) stays on the representative event
+        "frequency": {"T": [2, 5, 10, 20, 30, 50, 100, 150, 200], "ratio": [0.414, 0.571, 0.675, 0.774, 0.832, 0.903, 1.0, 1.056, 1.096],
+                      "status": "根拠（比）・仮定（代表洪水 = 1/100、引き伸ばし、気候変動は全確率規模に同じ倍率）",
+                      "basis": "気象庁アメダス 11 地点の年最大日降水量（43〜49 年）の Gumbel 分布。1/200 より稀な洪水と 1/2 未満は数えない"},
     },
 }
 

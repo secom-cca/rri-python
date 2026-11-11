@@ -14,7 +14,8 @@ appends the climate exactly as explore.Space.features does.
         relocate   share raised, share relocated         (raised x raise effect)
         paddy_dam  implementation rate                   (x paddy effect)
         forest     sum(planted share x maturity), planted share   (first x forest effect)
-    environment: rain_factor, sea_level_rise_m, rain_gamma, effect_<type>
+    environment: rain_factor, sea_level_rise_m, rain_gamma (+ effect_<type> for explorations before v5; from v5 the
+    measures act with their physical parameters and there are no effect coefficients)
 
 Costs (costs.py through the GUI engine, no flood run): per variable the
 initial [億円] and annual [億円/年] cost by option or on a rate grid
@@ -39,7 +40,7 @@ EFFECT_OF = {"levee": "levee_effect", "retention": "retention_effect", "paddy_da
              "forest": "forest_effect", "raise": "raise_effect"}
 OUT_KEYS = ("damage", "pop_hazard", "households", "livability", "ecology")
 # variable types the roadmap / DAPP models handle (housing as one variable none / raise / relocate)
-SUPPORTED_TYPES = ("levee", "retention", "paddy_dam", "forest", "relocate", "pump_urban", "pump_agri",
+SUPPORTED_TYPES = ("levee", "retention", "paddy_dam", "forest", "forest_mgmt", "relocate", "pump_urban", "pump_agri",
                    "storage_public", "storage_private")
 
 
@@ -99,8 +100,9 @@ class Physics:
         cols = []
         for c, (i, eff) in enumerate(self.layout):
             x = raw[:, c]
-            if eff is not None:
-                x = x * np.clip(np.broadcast_to(env[EFFECT_OF[eff]], (n,)), *self.ranges[EFFECT_OF[eff]])
+            if eff is not None and EFFECT_OF[eff] in self.ranges:       # effect coefficients: explorations before v5 only
+                e = env.get(EFFECT_OF[eff], 1.0)
+                x = x * np.clip(np.broadcast_to(e, (n,)), *self.ranges[EFFECT_OF[eff]])
             cols.append(x)
         for name in ENV_CLIMATE:
             lo, hi = self.ranges[name]
@@ -167,7 +169,8 @@ class SurrogatePhysics(Physics):
         return EX.space_from_results({"variables": self.variables, "config": self.cfg_explore})
 
     def _fit(self, log):
-        self.sur = EX.surrogate_from_results({"design": self.design, "config": self.cfg_explore}, self.keys,
+        self.sur = EX.surrogate_from_results({"design": self.design, "config": self.cfg_explore, "variables": self.variables},
+                                             self.keys,
                                              [self.dir, EX.EXPLORE_DIR / self.explore_name], log)
 
     def predict(self, raw, env):
@@ -218,13 +221,14 @@ class SurrogatePhysics(Physics):
                 x.append(round(r[0], 2))
             else:
                 x.append(int(round(r[0] * (len(v["options"]) - 1))))
-        for t, k in EFFECT_OF.items():
-            sim[k] = float(env_row[k])
-        if mat:
-            sim["forest_effect"] *= float(np.mean(mat))
-        if share:
-            sim["raise_effect"] *= float(np.mean(share))
-        sim["forest_effect"] = float(np.clip(sim["forest_effect"], 0.0, self.ranges["forest_effect"][1]))
+        if all(k in self.ranges for k in EFFECT_OF.values()):          # explorations before v5 (effect coefficients)
+            for t, k in EFFECT_OF.items():
+                sim[k] = float(env_row.get(k, 1.0))
+            if mat:
+                sim["forest_effect"] *= float(np.mean(mat))
+            if share:
+                sim["raise_effect"] *= float(np.mean(share))
+            sim["forest_effect"] = float(np.clip(sim["forest_effect"], 0.0, self.ranges["forest_effect"][1]))
         return x, {k: round(v, 5) for k, v in sim.items()}
 
 

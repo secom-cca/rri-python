@@ -65,9 +65,9 @@ def test_sensitivity_pipeline_with_a_fake_evaluator(tmp_path):
     out = SA.run(tmp_path, ov, evaluator=FakeEvaluator(), log=lambda *a: None)
     saved = json.loads((tmp_path / "sensitivity.json").read_text())
     assert (tmp_path / "config_sensitivity.json").exists()
-    # the fake model depends on rain_factor (strongly) and not on forest/retention effects of the analysed policies
+    # the fake model depends on rain_factor most strongly (no effect coefficients any more)
     sc = saved["morris"]["score"]
-    assert sc["rain_factor"] > sc["forest_effect"] and "rain_factor" in saved["morris"]["selected"]
+    assert sc["rain_factor"] == max(sc.values()) and "rain_factor" in saved["morris"]["selected"]
     assert saved["surrogate"]["validation"] and saved["surrogate"]["worst_rel_rmse"] < 0.2
     s = saved["sobol"]["results"]["damage"]; ins = saved["sobol"]["inputs"]
     assert s["ST"][ins.index("rain_factor")] == max(s["ST"])

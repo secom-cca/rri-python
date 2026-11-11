@@ -11,9 +11,11 @@ A request (variable, level) at decision year t becomes an Action:
               start when nothing else has started in that decision (it takes the decade's budget)
   2. consensus the needed stakeholders are engaged (social.py); consensus time C, failure (drawn
               once per attempt from the world), adoption ceiling A
-  3. build    levees / retention: in place at t + C + build; forest: planted linearly over build years
-  4. diffuse  paddy dams / housing: implementation share grows linearly over diffuse years to A
-  5. mature   forest: effect of a planted cohort grows linearly over mature years (from mid-planting)
+  3. build    levees / retention: in place at t + C + build (step).  Pumps, public storage: effect grows linearly from 0
+              to 100 % over the build years
+  4. diffuse  paddy dams, forest management, housing (raise / relocate), private storage, institutions: implementation
+              share grows linearly over diffuse years to A
+  (5. mature  afforestation of earlier runs only: effect of a planted cohort grows over mature years)
   A failed action is known at t + C; its committed budget is released and the variable goes back to
   its previous level (the controller may try again).
 Payments: the committed cost (x adoption for paddy dams / forest / housing) is spread over the
@@ -30,8 +32,8 @@ import numpy as np
 
 from .social import Social
 
-ADOPTION_KINDS = ("paddy_dam", "forest", "raise", "relocate", "storage_private", "floodproof", "evacuation")
-STEP_KINDS = ("levee", "retention", "pump_urban", "pump_agri", "storage_public")    # in place when built
+ADOPTION_KINDS = ("paddy_dam", "forest", "forest_mgmt", "raise", "relocate", "storage_private", "floodproof", "evacuation")
+STEP_KINDS = ("levee", "retention")    # in place when built; every other kind grows linearly over its build + diffuse years
 
 
 def decision_years(cfg):
@@ -259,7 +261,7 @@ class State:
             return a.t_cons + a.build
         if a.kind == "forest":
             return a.t_cons + a.build + a.mature
-        return a.t_cons + a.diffuse
+        return a.t_cons + a.build + a.diffuse
 
     def _final(self, i, kind, level, cur, adopt):
         v = self.phys.variables[i]
@@ -308,8 +310,9 @@ class State:
         for a in acts:
             if a.kind in STEP_KINDS:
                 p = float(t >= a.t_cons + a.build)
-            else:
-                p = float(np.clip((t - a.t_cons) / a.diffuse, 0, 1)) if a.diffuse > 0 else float(t >= a.t_cons)
+            else:                                     # linear 0 -> 100 % over the build and diffusion years
+                dur = a.build + a.diffuse
+                p = float(np.clip((t - a.t_cons) / dur, 0, 1)) if dur > 0 else float(t >= a.t_cons)
             out = tuple(o + p * (f - o) for o, f in zip(out, a.final))
         return out
 
@@ -448,32 +451,26 @@ def evaluate(states, phys):
 
 
 def observe(state, t, ref, cfg):
-    """What a controller knows at decision year t (noisy, from the world; common random numbers)."""
+    """What a controller knows at decision year t (no observation error): the outcome of the last evaluated period, the
+    current climate and exposure, and the forecast of the 2100 climate (world.forecast)."""
     w, mon = state.world, cfg["monitoring"]
     last = state.periods[-1] if state.periods else None
     obs = {"t": t}
     if last is not None:
-        obs["damage_ratio"] = last["damage"] / max(ref["damage"], 1e-9) * (1 + mon["risk_noise"] * w.noise("risk", t))
-        obs["pop_ratio"] = last["pop_risk"] / max(ref["pop_hazard"], 1e-9) * (1 + mon["risk_noise"] * w.noise("pop", t))
+        obs["damage_ratio"] = last["damage"] / max(ref["damage"], 1e-9)
+        obs["pop_ratio"] = last["pop_risk"] / max(ref["pop_hazard"], 1e-9)
         prev = state.periods[-3] if len(state.periods) >= 3 else None
         if prev is not None:
             obs["damage_ratio_prev"] = prev["damage"] / max(ref["damage"], 1e-9)
             obs["pop_ratio_prev"] = prev["pop_risk"] / max(ref["pop_hazard"], 1e-9)
     tm = t - cfg["years"]["eval_step"] / 2 if t > cfg["years"]["start"] else t
-    obs["rain"] = w.rain(tm) + mon["rain_noise"] * w.noise("rain", t)
-    obs["slr"] = w.slr(tm) + mon["slr_noise"] * w.noise("slr", t)
-    obs["asset"] = w.asset(tm) * (1 + mon["exposure_noise"] * w.noise("asset", t))
-    obs["pop"] = w.pop(tm) * (1 + mon["exposure_noise"] * w.noise("popf", t))
-    eff = {}
-    for a in state.actions:                       # effects can be observed where a measure works
-        if not a.failed and state.complete_year(a) <= t and a.kind in ("levee", "retention", "paddy_dam", "forest", "raise"):
-            k = a.kind
-            eff[k] = w.effect(k, tm) + mon["effect_noise"] * w.noise("eff_" + k, t)
-    obs["effects"] = eff
+    obs["rain"], obs["slr"], obs["asset"], obs["pop"] = w.rain(tm), w.slr(tm), w.asset(tm), w.pop(tm)
+    obs["forecast"] = w.forecast(t)
+    obs["effects"] = {}
     obs["phases"] = [{"kind": a.kind, "phase": ph, "years": getattr(a, ph)} for a in state.actions
                      if not a.failed and state.complete_year(a) <= t
                      for ph in ("build", "diffuse", "mature") if getattr(a, ph) > 0]
-    obs["regime"] = w.regime_at(t - mon["regime_lag_years"])
+    obs["regime"] = w.regime_at(t - mon.get("regime_lag_years", 0))
     obs["failures"] = [e for e in state.log if e["event"] == "failed" and e["year"] <= t]
     return obs
 

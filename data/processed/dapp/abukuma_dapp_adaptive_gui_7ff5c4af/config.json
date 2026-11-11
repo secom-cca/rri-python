@@ -1,0 +1,1181 @@
+{
+  "name": "abukuma_dapp",
+  "basin": "abukuma_whole",
+  "res": 1000.0,
+  "event": "abukuma_2019",
+  "seed": 1,
+  "budget_oku": 2000.0,
+  "zones": [
+    [
+      "上流",
+      "本宮"
+    ],
+    [
+      "中流",
+      "伏黒"
+    ],
+    [
+      "下流",
+      null
+    ]
+  ],
+  "candidates": {
+    "levee": {
+      "min_area_km2": 5.0,
+      "heights_m": [
+        0,
+        1,
+        2
+      ],
+      "select": "overflow",
+      "margin_m": 0.2
+    },
+    "retention": {
+      "n_sites": 3,
+      "depth_m": 3.0,
+      "site_km2": 2.0,
+      "hand_max_m": 3.0,
+      "min_river_km2": 300.0
+    },
+    "paddy_dam": {},
+    "forest": {
+      "hand_min_m": 20.0
+    },
+    "forest_mgmt": {
+      "hand_min_m": 0.0,
+      "split_owner": true,
+      "min_cells": 3
+    },
+    "housing": "split",
+    "relocate": {
+      "depth_min_m": 1.0,
+      "raise_m": 1.0,
+      "dest": "new"
+    },
+    "raise": {
+      "depth_min_m": 1.0,
+      "heights_m": [
+        1.0
+      ]
+    },
+    "pump_urban": {
+      "mmh": 10.0,
+      "hand_max_m": 5.0,
+      "depth_min_m": 0.1,
+      "min_cells": 3
+    },
+    "pump_agri": {
+      "mmh": 3.0,
+      "hand_max_m": 5.0,
+      "depth_min_m": 0.1,
+      "min_cells": 3
+    },
+    "storage_public": {
+      "depth_mm": 30.0,
+      "release_mmh": 2.0,
+      "depth_min_m": 0.1,
+      "min_cells": 3
+    },
+    "storage_private": {
+      "depth_mm": 10.0,
+      "release_mmh": 2.0,
+      "depth_min_m": 0.1,
+      "min_cells": 3
+    }
+  },
+  "optimisation": {
+    "pop": 12,
+    "gens": 4,
+    "p_mutation": 0.15
+  },
+  "scenarios": {
+    "climates": [
+      "current",
+      "2C",
+      "4C"
+    ],
+    "n_per_climate": 2,
+    "n_post": 8
+  },
+  "uncertainties": {
+    "rain_gamma": {
+      "low": 0.9,
+      "high": 1.2,
+      "nominal": 1.0,
+      "kind": "sim",
+      "label": "降雨強度の強調 γ（総雨量一定で強雨を強める）"
+    },
+    "paddy_effect": {
+      "low": 0.5,
+      "high": 1.0,
+      "nominal": 1.0,
+      "kind": "sim",
+      "label": "田んぼダムの効果係数（貯留深 15 cm × 係数）"
+    },
+    "forest_effect": {
+      "low": 0.5,
+      "high": 1.0,
+      "nominal": 1.0,
+      "kind": "sim",
+      "label": "森林化の効果係数（土層厚・粗度の増分 × 係数）"
+    },
+    "retention_effect": {
+      "low": 0.7,
+      "high": 1.0,
+      "nominal": 1.0,
+      "kind": "sim",
+      "label": "遊水地の効果係数（有効貯留深 × 係数）"
+    },
+    "cost_factor": {
+      "low": 0.8,
+      "high": 1.5,
+      "nominal": 1.0,
+      "kind": "post",
+      "label": "事業費係数"
+    },
+    "asset_factor": {
+      "low": 0.8,
+      "high": 1.2,
+      "nominal": 1.0,
+      "kind": "post",
+      "label": "資産額（被害額）係数"
+    }
+  },
+  "stakeholders": {
+    "国": {
+      "damage_zones": "all",
+      "cost_zones": "all",
+      "weights": {
+        "damage": 0.55,
+        "cost": 0.45
+      },
+      "regret_threshold": 0.05
+    },
+    "上流自治体": {
+      "damage_zones": [
+        "上流",
+        "中流"
+      ],
+      "cost_zones": [
+        "上流",
+        "中流"
+      ],
+      "weights": {
+        "damage": 0.65,
+        "cost": 0.35
+      },
+      "regret_threshold": 0.05
+    },
+    "下流自治体": {
+      "damage_zones": [
+        "下流"
+      ],
+      "cost_zones": [
+        "下流"
+      ],
+      "weights": {
+        "damage": 0.75,
+        "cost": 0.25
+      },
+      "regret_threshold": 0.05
+    },
+    "地域主体": {
+      "damage_zones": "all",
+      "cost_zones": [],
+      "weights": {
+        "households": 0.7,
+        "damage": 0.3
+      },
+      "regret_threshold": 0.05
+    }
+  },
+  "sobol": {
+    "n_base": 512
+  },
+  "sensitivity": {
+    "parameters": {
+      "rain_factor": {
+        "low": 1.0,
+        "high": 1.3,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "根拠",
+        "label": "降雨倍率（評価期間の総雨量）",
+        "basis": "国交省「気候変動を踏まえた治水計画のあり方」提言（改訂版）の降雨量変化倍率 2℃ 1.1・4℃ 1.2（その他の地域）。上限 1.3 は 4℃ の予測幅を見込んだ仮定"
+      },
+      "sea_level_rise_m": {
+        "low": 0.0,
+        "high": 0.7,
+        "nominal": 0.0,
+        "kind": "sim",
+        "status": "根拠",
+        "label": "海面上昇 [m]（河口の潮位境界）",
+        "basis": "日本の気候変動2020 領域I（北海道・東北）21世紀末 2℃ 0.38 m・4℃ 0.70 m"
+      },
+      "rain_gamma": {
+        "low": 0.8,
+        "high": 1.3,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "降雨強度分布 γ（総雨量一定で強雨を強める/弱める）",
+        "basis": "幅は仮定。d4PDF 等の時間雨量分布の変化で置き換えること"
+      },
+      "levee_effect": {
+        "low": 0.5,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "堤防の効果係数（嵩上げの実効高さ）",
+        "basis": "施工区間の不連続・沈下・弱部を想定した仮定"
+      },
+      "retention_effect": {
+        "low": 0.5,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "遊水地の効果係数（有効貯留深）",
+        "basis": "越流堤の運用・堆砂を想定した仮定"
+      },
+      "paddy_effect": {
+        "low": 0.3,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "田んぼダムの効果係数（貯留深 15 cm × 係数）",
+        "basis": "取組率・排水口管理のばらつきを想定した仮定"
+      },
+      "forest_effect": {
+        "low": 0.3,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "森林化の効果係数（土層厚・粗度の増分 × 係数）",
+        "basis": "森林の成熟度（植栽後の年数）を想定した仮定"
+      },
+      "forest_mgmt_effect": {
+        "low": 0.0,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "森林整備の効果係数（既存森林の土壌貯留 d_a, d_m の増分 20% × 係数）",
+        "basis": "間伐・下層植生回復による保水力の改善量は観測例が少なく大洪水では小さいとされるため、0（効果なし）〜1 の幅を仮定"
+      },
+      "raise_effect": {
+        "low": 0.5,
+        "high": 1.0,
+        "nominal": 1.0,
+        "kind": "sim",
+        "status": "仮定",
+        "label": "嵩上げの効果係数（床高の上げ幅 × 係数）",
+        "basis": "対象世帯の実施率を想定した仮定"
+      },
+      "cost_factor": {
+        "low": 0.8,
+        "high": 1.5,
+        "nominal": 1.0,
+        "kind": "post",
+        "status": "仮定",
+        "label": "事業費係数",
+        "basis": "公共事業の事業費の増減幅を想定した仮定"
+      },
+      "asset_factor": {
+        "low": 0.8,
+        "high": 1.2,
+        "nominal": 1.0,
+        "kind": "post",
+        "status": "仮定",
+        "label": "資産額（被害額）係数",
+        "basis": "資産評価単価・延床面積推計の誤差を想定した仮定（docs/03）"
+      }
+    },
+    "policies": "recommended",
+    "morris": {
+      "r": 4,
+      "levels": 4
+    },
+    "screening": {
+      "top_k": 4,
+      "min_rel_mu_star": 0.05
+    },
+    "surrogate": {
+      "n_train": 16,
+      "n_val": 6,
+      "anchor_nominal": true
+    },
+    "sobol": {
+      "log2_n": 12,
+      "n_boot": 200
+    },
+    "decision": {
+      "n_samples": 4096
+    },
+    "preference": {
+      "n_weight_samples": 2000,
+      "sweep_steps": 21
+    }
+  },
+  "explore": {
+    "name": "abukuma_explore",
+    "target_ratio": 1.0,
+    "continuous": [
+      "paddy_dam",
+      "forest",
+      "forest_mgmt",
+      "forest_mgmt_national",
+      "storage_private"
+    ],
+    "cell_order": "random",
+    "current_baseline": true,
+    "zero_share": 0.2,
+    "design": {
+      "n_train": 240,
+      "n_none": 16,
+      "n_val": 30,
+      "adaptive_rounds": 6,
+      "adaptive_batch": 10,
+      "pool": 4000
+    },
+    "ensemble": {
+      "n": 512
+    },
+    "optimisation": {
+      "pop": 64,
+      "gens": 60,
+      "p_mut": 0.15,
+      "objectives": [
+        "cost",
+        "damage_mean",
+        "reliability"
+      ]
+    },
+    "verify": {
+      "n_policies": 10,
+      "n_scenarios": 12
+    },
+    "target_curve": [
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0,
+      1.1,
+      1.2,
+      1.3,
+      1.4
+    ],
+    "rain_bins": 5,
+    "scopes": {
+      "actors": {
+        "levee": "国",
+        "retention": "国",
+        "forest_mgmt_national": "国",
+        "pump_urban": "自治体",
+        "storage_public": "自治体",
+        "relocate": "自治体",
+        "raise": "自治体",
+        "pump_agri": {
+          "国": 0.6,
+          "自治体": 0.25,
+          "地域主体": 0.15
+        },
+        "forest_mgmt": {
+          "国": 0.3,
+          "自治体": 0.4,
+          "地域主体": 0.3
+        },
+        "paddy_dam": "地域主体",
+        "forest": "地域主体",
+        "storage_private": "地域主体"
+      },
+      "zonal": {
+        "自治体": {
+          "上流": "上流自治体",
+          "中流": "上流自治体",
+          "下流": "下流自治体"
+        }
+      },
+      "optimisation": {
+        "pop": 64,
+        "gens": 40,
+        "p_mut": 0.15,
+        "objectives": [
+          "cost",
+          "damage_mean",
+          "reliability"
+        ]
+      },
+      "max_points": 1500
+    }
+  },
+  "surrogate_rdm": {
+    "name": "abukuma_rdm_surrogate",
+    "explore_run": "abukuma_explore_v2",
+    "cost_scale_oku": 2000.0,
+    "n_scenarios": 512,
+    "optimisation": {
+      "pop": 64,
+      "gens": 40,
+      "p_mut": 0.15,
+      "n_scenarios": 128
+    },
+    "n_display": 20,
+    "archive_display": 6000,
+    "sobol": {
+      "n_base": 256,
+      "pool_per_stakeholder": 300
+    },
+    "climate_bins": [
+      [
+        1.05,
+        "current",
+        "現在気候相当（降雨倍率 < 1.05）"
+      ],
+      [
+        1.15,
+        "2C",
+        "2℃相当（1.05–1.15）"
+      ],
+      [
+        9.99,
+        "4C",
+        "4℃相当以上（≥ 1.15）"
+      ]
+    ]
+  },
+  "years": {
+    "start": 2020,
+    "end": 2100,
+    "step": 10
+  },
+  "discount_rate": 0.04,
+  "representative_event": {
+    "annual_probability": 0.01,
+    "status": "仮定",
+    "basis": "2019年台風19号級の洪水を年超過確率 1/100 の代表洪水とみなす。各10年の期待被害 = 10 × 確率 × 代表洪水の被害額"
+  },
+  "climate_paths": {
+    "current": {
+      "points": [
+        [
+          2020,
+          1.0,
+          0.0
+        ],
+        [
+          2100,
+          1.0,
+          0.0
+        ]
+      ],
+      "status": "根拠",
+      "basis": "現在気候（観測降雨のまま）"
+    },
+    "2C": {
+      "points": [
+        [
+          2020,
+          1.0,
+          0.0
+        ],
+        [
+          2050,
+          1.06,
+          0.15
+        ],
+        [
+          2100,
+          1.1,
+          0.38
+        ]
+      ],
+      "status": "仮定",
+      "basis": "2100年値は国交省提言 2℃ 1.1・日本の気候変動2020 領域I 0.38 m（根拠）。途中の経路（2050年 1.06・0.15 m）は仮定"
+    },
+    "4C": {
+      "points": [
+        [
+          2020,
+          1.0,
+          0.0
+        ],
+        [
+          2050,
+          1.08,
+          0.2
+        ],
+        [
+          2100,
+          1.2,
+          0.7
+        ]
+      ],
+      "status": "仮定",
+      "basis": "2100年値は国交省提言 4℃ 1.2・日本の気候変動2020 0.70 m（根拠）。途中の経路は仮定"
+    }
+  },
+  "measures": {
+    "levee": {
+      "lead_years": 10,
+      "ramp_years": 0,
+      "change_cost_fraction": 0.2,
+      "status": "仮定",
+      "basis": "築堤・嵩上げの用地取得〜完成 約10年"
+    },
+    "retention": {
+      "lead_years": 10,
+      "ramp_years": 0,
+      "change_cost_fraction": 0.2,
+      "status": "仮定",
+      "basis": "遊水地の計画〜完成 約10年"
+    },
+    "paddy_dam": {
+      "lead_years": 0,
+      "ramp_years": 0,
+      "change_cost_fraction": 0.0,
+      "status": "仮定",
+      "basis": "調整板の設置は数年以内（期内に効果）"
+    },
+    "forest": {
+      "lead_years": 0,
+      "ramp_years": 30,
+      "change_cost_fraction": 0.0,
+      "status": "仮定",
+      "basis": "植林後 30 年で効果が最大（効果係数を 0→1 に線形増加）"
+    },
+    "raise": {
+      "lead_years": 5,
+      "ramp_years": 0,
+      "change_cost_fraction": 0.5,
+      "status": "仮定",
+      "basis": "住宅の嵩上げ 約5年。移転に切り替える場合は費用の半分が無駄になると仮定"
+    },
+    "relocate": {
+      "lead_years": 10,
+      "ramp_years": 0,
+      "change_cost_fraction": 0.2,
+      "status": "仮定",
+      "basis": "移転先の造成・合意形成 約10年"
+    }
+  },
+  "budget": {
+    "total_oku": 2000.0,
+    "per_decade_oku": 500.0
+  },
+  "atp": {
+    "damage_ratio": 1.2,
+    "pop_ratio": 1.2
+  },
+  "strategies": {
+    "無対策": {
+      "kind": "static",
+      "schedule": []
+    },
+    "早期集中投資": {
+      "kind": "static",
+      "budget_cap_factor": 4.0,
+      "schedule": [
+        [
+          2020,
+          [
+            "levee:1",
+            "retention:1",
+            "paddy_dam:1",
+            "relocate@下流:1"
+          ]
+        ]
+      ]
+    },
+    "段階的投資": {
+      "kind": "static",
+      "schedule": [
+        [
+          2020,
+          [
+            "paddy_dam:1"
+          ]
+        ],
+        [
+          2030,
+          [
+            "levee:1"
+          ]
+        ],
+        [
+          2040,
+          [
+            "retention:1"
+          ]
+        ],
+        [
+          2050,
+          [
+            "relocate@下流:1"
+          ]
+        ],
+        [
+          2060,
+          [
+            "levee:2"
+          ]
+        ]
+      ]
+    },
+    "自然基盤重視": {
+      "kind": "static",
+      "schedule": [
+        [
+          2020,
+          [
+            "paddy_dam:1",
+            "forest:1"
+          ]
+        ],
+        [
+          2030,
+          [
+            "retention:1"
+          ]
+        ],
+        [
+          2050,
+          [
+            "relocate@下流:2"
+          ]
+        ]
+      ]
+    },
+    "構造物重視": {
+      "kind": "static",
+      "schedule": [
+        [
+          2020,
+          [
+            "levee:1"
+          ]
+        ],
+        [
+          2030,
+          [
+            "retention:1"
+          ]
+        ],
+        [
+          2040,
+          [
+            "levee:2"
+          ]
+        ]
+      ]
+    },
+    "状況適応型": {
+      "kind": "adaptive",
+      "initial": 1,
+      "trigger_ratio": 1.0,
+      "monitor_lag": 1,
+      "pathway": [
+        [
+          "paddy_dam:1",
+          "forest:1"
+        ],
+        [
+          "levee:1"
+        ],
+        [
+          "retention:1"
+        ],
+        [
+          "relocate@下流:1"
+        ],
+        [
+          "levee:2"
+        ],
+        [
+          "relocate@下流:2",
+          "relocate@上流:2"
+        ]
+      ]
+    }
+  },
+  "quick_strategies": [
+    "無対策",
+    "早期集中投資",
+    "段階的投資",
+    "状況適応型"
+  ],
+  "regret_threshold": 0.05,
+  "weight_samples": 2000,
+  "stakeholder_atp_ratio": {
+    "国": 1.2,
+    "上流自治体": 1.1,
+    "下流自治体": 1.0,
+    "住民": 1.0
+  },
+  "robust": {
+    "name": "abukuma_dapp_robust",
+    "explore_run": "abukuma_explore_v2",
+    "model": {
+      "years": {
+        "start": 2020,
+        "end": 2100,
+        "decision_step": 10,
+        "eval_step": 5
+      },
+      "budget": {
+        "total_oku": 2000.0,
+        "per_decade_oku": 500.0,
+        "status": "仮定",
+        "basis": "初期費用（割引前）の総額と10年ごとの上限（docs/11 と同じ）。超過分は次の意思決定へ繰り越す"
+      },
+      "measures": {
+        "forest": {
+          "reconvert": {
+            "allowed": true,
+            "max_age_years": 10,
+            "cost_fraction": 0.5,
+            "status": "仮定",
+            "basis": "植栽後10年以内なら伐採して農地に戻せる（植栽費の半分を要する）。以後は森林として固定（保安林等）"
+          }
+        }
+      },
+      "participation": {
+        "fail_scale": {
+          "nominal": 0.0,
+          "low": 0.0,
+          "high": 0.0
+        },
+        "coord_cost_scale": {
+          "nominal": 0.0,
+          "low": 0.0,
+          "high": 0.0
+        },
+        "consensus_cost_oku_yr": 0.0,
+        "adoption": {
+          "paddy_dam": [
+            1.0,
+            1.0
+          ],
+          "forest": [
+            1.0,
+            1.0
+          ],
+          "raise": [
+            1.0,
+            1.0
+          ],
+          "relocate": [
+            1.0,
+            1.0
+          ],
+          "storage_private": [
+            1.0,
+            1.0
+          ],
+          "floodproof": [
+            1.0,
+            1.0
+          ],
+          "evacuation": [
+            1.0,
+            1.0
+          ]
+        }
+      }
+    },
+    "landuse": {
+      "forest_on_paddy_share": {
+        "value": 0.5,
+        "status": "仮定",
+        "basis": "森林化の候補（HAND ≥ 20 m の水田・畑）のうち水田の割合。森林化した水田では田んぼダムができない"
+      },
+      "conversions": {
+        "forest": {
+          "from": "農地",
+          "to": "森林",
+          "irreversible": "植栽後 max_age_years を過ぎると農地に戻せない"
+        },
+        "retention": {
+          "from": "農地",
+          "to": "遊水地",
+          "irreversible": "用地買収・地役権設定後は農地に戻さない（仮定）"
+        },
+        "relocate": {
+          "from": "住宅地",
+          "to": "移転跡地（災害危険区域）",
+          "irreversible": "移転跡地は再び住宅地にしない（建築制限）"
+        }
+      }
+    },
+    "targets": {
+      "damage_ratio": 1.2,
+      "pop_ratio": 1.5,
+      "from_year": 2030,
+      "status": "仮定",
+      "basis": "被害額は現状（対策なし・現在気候）の 1.2 倍まで（docs/11・13 の ATP と同じ）、浸水人口は 1.5 倍まで（代理モデルの浸水人口は階段状で変動が大きい）。2020年代は施策の完成を待つ"
+    },
+    "scenarios": {
+      "n": 128,
+      "groups": [
+        "climate",
+        "landuse",
+        "effects",
+        "delays"
+      ],
+      "status": "仮定",
+      "basis": "気候（降雨・海面・強雨・想定から外れる年）、社会経済（浸水域の資産・人口）、施策効果、実施期間。LHS の標本であり発生確率ではない"
+    },
+    "candidates": {
+      "pop": 64,
+      "gens": 30,
+      "p_mut": 0.15,
+      "eval_years": [
+        2050,
+        2095
+      ],
+      "n_nodes": 24,
+      "max_nodes": 400
+    },
+    "trigger": {
+      "ratio_of_threshold": 0.9,
+      "use_observed": true,
+      "use_projection": true,
+      "horizon_years": 30,
+      "safety": 1.0,
+      "status": "仮定",
+      "basis": "観測した被害の比が閾値 × ratio_of_threshold を超えるか、観測した気候の傾向から次の施策の完成時に閾値を超えると予測されたら移行に着手する。移行先は horizon_years 先まで目標を満たすと予測される最も安い組合せ"
+    },
+    "network": {
+      "max_successors": 4
+    },
+    "initial": {
+      "n_max": 16,
+      "max_cost_oku": 500.0
+    },
+    "weights": {
+      "damage": 0.45,
+      "cost": 0.25,
+      "pop": 0.1,
+      "ecology": 0.1,
+      "livability": 0.05,
+      "agriculture": 0.05
+    },
+    "regret_threshold": 0.05,
+    "prim": {
+      "alpha": 0.05,
+      "min_mass": 0.05,
+      "density": 0.8
+    }
+  },
+  "multi": {
+    "name": "abukuma_dapp_multi",
+    "single": {
+      "label": "流域（単一主体）"
+    },
+    "robust_overrides": {
+      "scenarios": {
+        "n": 64
+      }
+    },
+    "actors": {
+      "国": {
+        "label": "国（河川管理者）",
+        "measures": [
+          "堤防・上流",
+          "堤防・下流",
+          "遊水地1・下流",
+          "遊水地2・下流"
+        ],
+        "budget": {
+          "total_oku": null,
+          "per_decade_oku": 400.0
+        },
+        "metric": "basin",
+        "targets": {
+          "damage_ratio": 1.2,
+          "pop_ratio": 1.5
+        },
+        "weights": {
+          "damage": 0.45,
+          "pop": 0.15,
+          "cost": 0.25,
+          "ecology": 0.1,
+          "agriculture": 0.05
+        }
+      },
+      "上流自治体": {
+        "label": "上流自治体",
+        "measures": [
+          "田んぼダム・上流",
+          "森林化・上流",
+          "住宅対策・上流",
+          "雨水貯留（公共）・上流"
+        ],
+        "budget": {
+          "total_oku": null,
+          "per_decade_oku": 120.0
+        },
+        "metric": "上流",
+        "targets": {
+          "damage_ratio": 1.2
+        },
+        "weights": {
+          "damage": 0.5,
+          "cost": 0.3,
+          "ecology": 0.1,
+          "agriculture": 0.1
+        }
+      },
+      "下流自治体": {
+        "label": "下流自治体",
+        "measures": [
+          "田んぼダム・下流",
+          "住宅対策・下流",
+          "排水ポンプ（下水道）・下流",
+          "雨水貯留（公共）・下流"
+        ],
+        "budget": {
+          "total_oku": null,
+          "per_decade_oku": 250.0
+        },
+        "metric": "下流",
+        "targets": {
+          "damage_ratio": 1.2
+        },
+        "weights": {
+          "damage": 0.55,
+          "cost": 0.35,
+          "ecology": 0.05,
+          "agriculture": 0.05
+        }
+      }
+    },
+    "budget_status": {
+      "status": "仮定",
+      "basis": "10年ごとの財政・実施容量（国 400・上流 120・下流 250 億円; 単一主体は合計 770 億円）。総額の上限は置かない"
+    },
+    "subsidy": {
+      "relocate": {
+        "payer": "国",
+        "share": 0.5,
+        "status": "仮定",
+        "basis": "住宅の嵩上げ・移転（防災集団移転促進事業など）の費用の半分を国が負担する"
+      }
+    },
+    "rules": {
+      "staged_rho": 0.9,
+      "restrained_rho": 1.3,
+      "status": "仮定",
+      "basis": "積極投資: 全施策を最初に着手（予算超過分は繰越）。段階投資: 費用対効果の順に、観測・予測が 0.9 × 目標を超えるたび1つ。投資抑制: 観測した被害が 1.3 × 目標を超えるまで何もしない、以後リードタイムの短い順に1つずつ"
+    },
+    "strategy": {
+      "seq_len": 4,
+      "rho_grid": [
+        0.7,
+        0.8,
+        0.9,
+        1.0,
+        1.1
+      ],
+      "switch_grid": [
+        1.08,
+        1.12,
+        1.16,
+        1.2,
+        1.24
+      ],
+      "switch_from_year": 2050
+    },
+    "search": {
+      "n_scenarios": 48,
+      "pop": 24,
+      "gens": 10,
+      "p_mut": 0.2,
+      "basin_pop": 32,
+      "basin_gens": 12
+    },
+    "choose": {
+      "coverage_tolerance": 0.03
+    },
+    "options_year": 2060,
+    "dependence_scenarios": 16,
+    "network": {
+      "max_states_per_year": 6
+    },
+    "gui": {
+      "sizes": {
+        "fast": {
+          "robust_overrides": {
+            "scenarios": {
+              "n": 32
+            }
+          },
+          "dependence_scenarios": 8,
+          "search": {
+            "n_scenarios": 16,
+            "pop": 12,
+            "gens": 4,
+            "basin_pop": 16,
+            "basin_gens": 4
+          }
+        },
+        "standard": {
+          "robust_overrides": {
+            "scenarios": {
+              "n": 64
+            }
+          },
+          "search": {
+            "n_scenarios": 32,
+            "pop": 16,
+            "gens": 6,
+            "basin_pop": 24,
+            "basin_gens": 8
+          }
+        },
+        "full": {}
+      }
+    }
+  },
+  "adaptive": {
+    "name": "abukuma_dapp_adaptive_gui_7ff5c4af",
+    "robust_run": "abukuma_dapp_robust",
+    "inits": "all",
+    "policy": {
+      "rho_grid": [
+        0.7,
+        0.8,
+        0.9,
+        1.0,
+        1.1
+      ],
+      "rain_grid": [
+        1.08,
+        1.12,
+        1.16,
+        1.2,
+        1.24
+      ],
+      "weight_grid": [
+        0.0,
+        0.5,
+        1.0,
+        2.0
+      ],
+      "horizon_grid": [
+        10,
+        20,
+        30
+      ],
+      "k_grid": [
+        1,
+        2
+      ],
+      "scale_back_grid": [
+        0.0,
+        0.5,
+        0.7
+      ],
+      "min_benefit": 0.005,
+      "cost_ref_oku": 100.0,
+      "irr_penalty": 0.05,
+      "lead_penalty": 0.05,
+      "lead_ref_years": 20.0,
+      "status": "仮定",
+      "basis": "行動の得点＝予測した効果 ÷ (1 + w_cost × 初期費用 / 100億円) − w_irr × 0.05 × 不可逆 − w_lead × 0.05 × リードタイム/20年"
+    },
+    "search": {
+      "n_scenarios": 12,
+      "pop": 10,
+      "gens": 3,
+      "p_mut": 0.2
+    },
+    "choose": {
+      "coverage_tolerance": 0.03
+    },
+    "sensitivity": {
+      "targets": {
+        "damage_ratio": 1.4
+      }
+    },
+    "planning": {
+      "range": "high"
+    },
+    "planning_ranges": {
+      "low": {
+        "label": "Low only",
+        "rain_2100": [
+          1.0,
+          1.1
+        ],
+        "slr_2100": [
+          0.2,
+          0.38
+        ]
+      },
+      "medium": {
+        "label": "Medium only",
+        "rain_2100": [
+          1.1,
+          1.2
+        ],
+        "slr_2100": [
+          0.38,
+          0.54
+        ]
+      },
+      "high": {
+        "label": "High only",
+        "rain_2100": [
+          1.2,
+          1.3
+        ],
+        "slr_2100": [
+          0.54,
+          0.7
+        ]
+      },
+      "low_high": {
+        "label": "Low–High range",
+        "rain_2100": [
+          1.0,
+          1.3
+        ],
+        "slr_2100": [
+          0.2,
+          0.7
+        ]
+      },
+      "status": "仮定",
+      "basis": "2100年の降雨倍率・海面上昇の範囲（docs/13 の 1.0〜1.3・0.2〜0.7 m）を 2℃（×1.10・0.38 m）と 4℃（×1.20）で3つに区切る"
+    },
+    "gui": {
+      "sizes": {
+        "fast": {
+          "search": {
+            "n_scenarios": 12,
+            "pop": 10,
+            "gens": 3
+          }
+        },
+        "standard": {
+          "search": {
+            "n_scenarios": 24,
+            "pop": 16,
+            "gens": 6
+          }
+        }
+      }
+    },
+    "gui_inputs": {
+      "base": "abukuma_dapp_adaptive",
+      "mode": "search",
+      "size": "fast",
+      "rules_from": null
+    }
+  }
+}

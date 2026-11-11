@@ -99,22 +99,17 @@ def blank_state(cfg, phys, world, t_check, modes):
 # ------------------------------------------------------------------ updateability
 def change_events(cfg, world):
     """Deviations of the world from the planner's initial belief: [{kind, year, what, magnitude}].
-    A wrong initial assumption (effect, delay, population trend) counts from the start year,
-    a later change (climate shift, technology, land use, criteria) from the year it begins."""
+    A wrong initial assumption (climate, delay, exposure trend) counts from the start year, a change of criteria from the year
+    it begins."""
     p, b = world.p, WD.belief_params(cfg)
     y0 = float(cfg["years"]["start"])
     tol = cfg["detect"]
     out = []
     if abs(p["rain_pts"][-1][1] - b["rain_pts"][-1][1]) > 0.02 or abs(p["slr_pts"][-1][1] - b["slr_pts"][-1][1]) > 0.05:
-        out.append({"kind": "climate", "year": float(p["rain_pts"][-2][0]), "what": "rain_2100",
+        out.append({"kind": "climate", "year": y0, "what": "rain_2100",
                     "magnitude": p["rain_pts"][-1][1] - b["rain_pts"][-1][1]})
-    for k, e in p["eff0"].items():
-        if abs(e - b["eff0"][k]) > tol["effect_tol"]:
-            out.append({"kind": "effect", "year": y0, "what": k, "magnitude": e - b["eff0"][k]})
-    if abs(p["tech_gain"]) > 0.05:
-        out.append({"kind": "effect", "year": float(p["tech_year"]), "what": "tech", "magnitude": p["tech_gain"]})
     if abs(p["asset_pts"][-1][1] - b["asset_pts"][-1][1]) > 0.05:
-        out.append({"kind": "landuse", "year": float(p["asset_pts"][1][0]), "what": "asset", "magnitude": p["asset_pts"][-1][1] - 1.0})
+        out.append({"kind": "landuse", "year": y0, "what": "asset", "magnitude": p["asset_pts"][-1][1] - b["asset_pts"][-1][1]})
     if abs(p["pop_pts"][-1][1] - b["pop_pts"][-1][1]) > 0.05:
         out.append({"kind": "landuse", "year": y0, "what": "pop", "magnitude": p["pop_pts"][-1][1] - b["pop_pts"][-1][1]})
     for k, ph in p["phases"].items():

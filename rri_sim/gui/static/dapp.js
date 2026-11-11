@@ -24,7 +24,10 @@ async function init() {
 }
 async function load(name) {
   D = await (await fetch(`/api/dapp/${encodeURIComponent(name)}`)).json();
-  const robust = D.mode === 'robust', multi = D.mode === 'multi', adaptive = D.mode === 'adaptive';
+  const robust = D.mode === 'robust', multi = D.mode === 'multi', adaptive = D.mode === 'adaptive', forecast = D.mode === 'forecast';
+  $('forecast').hidden = false; $('forecast').style.display = forecast ? '' : 'none';
+  if (forecast) { for (const k of ['classic', 'robust', 'multi', 'adaptive', 'clim-box']) $(k).style.display = 'none';
+    (await import('/static/dapp_forecast.js')).render(D, name); return; }
   $('adaptive').hidden = false; $('adaptive').style.display = adaptive ? '' : 'none';
   if (adaptive) { $('classic').style.display = 'none'; $('robust').style.display = 'none'; $('multi').style.display = 'none'; $('clim-box').style.display = 'none';
     (await import('/static/dapp_adaptive.js')).render(D, name); return; }

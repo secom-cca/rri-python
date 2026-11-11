@@ -1,0 +1,86 @@
+[準備] 流域モデルを読み込み中
+[準備] 表示データを準備中
+対策なし（現在気候）を計算中
+  sim #1: ['施策なし'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 756 億円
+  sim #2: ['施策なし'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1341 億円
+  sim #3: ['堤防・上流: +2 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 697 億円
+  堤防・上流 +2 m 現在気候 levee_effect=1.0: 被害 RRI -59.2 / 代理 -33.8 億円、浸水人口 RRI -413 / 代理 -1046
+  sim #4: ['堤防・上流: +2 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.5, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 725 億円
+  堤防・上流 +2 m 現在気候 levee_effect=0.5: 被害 RRI -31.5 / 代理 -19.9 億円、浸水人口 RRI -231 / 代理 -673
+  sim #5: ['堤防・上流: +2 m'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1255 億円
+  堤防・上流 +2 m 4℃ levee_effect=1.0: 被害 RRI -85.9 / 代理 -46.9 億円、浸水人口 RRI -2448 / 代理 -3014
+  sim #6: ['堤防・上流: +2 m'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.5, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1276 億円
+  堤防・上流 +2 m 4℃ levee_effect=0.5: 被害 RRI -65.0 / 代理 -23.1 億円、浸水人口 RRI -1740 / 代理 -1479
+  sim #7: ['堤防・中流: +2 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 729 億円
+  堤防・中流 +2 m 現在気候 levee_effect=1.0: 被害 RRI -27.0 / 代理 +1.1 億円、浸水人口 RRI -6 / 代理 -12
+  sim #8: ['堤防・中流: +2 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.5, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 748 億円
+  堤防・中流 +2 m 現在気候 levee_effect=0.5: 被害 RRI -8.2 / 代理 +0.5 億円、浸水人口 RRI -6 / 代理 -7
+  sim #9: ['堤防・中流: +2 m'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1306 億円
+  堤防・中流 +2 m 4℃ levee_effect=1.0: 被害 RRI -34.7 / 代理 +3.1 億円、浸水人口 RRI -6 / 代理 -25
+  sim #10: ['堤防・中流: +2 m'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.5, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1329 億円
+  堤防・中流 +2 m 4℃ levee_effect=0.5: 被害 RRI -11.5 / 代理 +1.7 億円、浸水人口 RRI +0 / 代理 -7
+  sim #11: ['堤防・下流: +2 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 720 億円
+  堤防・下流 +2 m 現在気候 levee_effect=1.0: 被害 RRI -36.6 / 代理 -6.5 億円、浸水人口 RRI -193 / 代理 +291
+  sim #12: ['堤防・下流: +2 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.5, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 721 億円
+  堤防・下流 +2 m 現在気候 levee_effect=0.5: 被害 RRI -35.3 / 代理 -18.6 億円、浸水人口 RRI -193 / 代理 -149
+  sim #13: ['堤防・下流: +2 m'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1202 億円
+  堤防・下流 +2 m 4℃ levee_effect=1.0: 被害 RRI -138.7 / 代理 -135.7 億円、浸水人口 RRI -5132 / 代理 -7786
+  sim #14: ['堤防・下流: +2 m'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.5, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 1246 億円
+  堤防・下流 +2 m 4℃ levee_effect=0.5: 被害 RRI -95.3 / 代理 -82.1 億円、浸水人口 RRI -4298 / 代理 -4680
+  sim #15: ['遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 728 億円
+  遊水地・上流 阿武隈川上流遊水地群（350 ha, 1500 万m³） 現在気候 retention_effect=1.0: 被害 RRI -28.2 / 代理 -6.7 億円、浸水人口 RRI +0 / 代理 -112
+  sim #16: ['遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 0.5, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 755 億円
+  遊水地・上流 阿武隈川上流遊水地群（350 ha, 1500 万m³） 現在気候 retention_effect=0.5: 被害 RRI -1.6 / 代理 -3.4 億円、浸水人口 RRI +0 / 代理 -59
+  sim #17: ['田んぼダム・上流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 584 億円
+  田んぼダム・上流 100% 現在気候 paddy_effect=1.0: 被害 RRI -172.4 / 代理 -106.8 億円、浸水人口 RRI -1652 / 代理 -1076
+  sim #18: ['田んぼダム・上流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 0.5, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 667 億円
+  田んぼダム・上流 100% 現在気候 paddy_effect=0.5: 被害 RRI -89.4 / 代理 -79.7 億円、浸水人口 RRI -968 / 代理 -886
+  sim #19: ['森林化・上流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 735 億円
+  森林化・上流 100% 現在気候 forest_effect=1.0: 被害 RRI -21.0 / 代理 -4.6 億円、浸水人口 RRI -875 / 代理 -9
+  sim #20: ['森林化・上流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 0.5, 'raise_effect': 1.0} -> 被害 743 億円
+  森林化・上流 100% 現在気候 forest_effect=0.5: 被害 RRI -13.3 / 代理 -3.3 億円、浸水人口 RRI -875 / 代理 -7
+  sim #21: ['住宅対策・上流: 嵩上げ +1.0 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 738 億円
+  住宅対策・上流 嵩上げ +1.0 m 現在気候 raise_effect=1.0: 被害 RRI -18.1 / 代理 -10.5 億円、浸水人口 RRI +0 / 代理 +312
+  sim #22: ['住宅対策・上流: 嵩上げ +1.0 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 0.5} -> 被害 745 億円
+  住宅対策・上流 嵩上げ +1.0 m 現在気候 raise_effect=0.5: 被害 RRI -10.9 / 代理 -5.3 億円、浸水人口 RRI +0 / 代理 +130
+  sim #23: ['住宅対策・上流: 移転'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 731 億円
+  住宅対策・上流 移転 現在気候 係数なし=1.0: 被害 RRI -24.9 / 代理 -40.6 億円、浸水人口 RRI -98 / 代理 -51
+  sim #24: ['田んぼダム・中流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 744 億円
+  田んぼダム・中流 100% 現在気候 paddy_effect=1.0: 被害 RRI -12.7 / 代理 -1.6 億円、浸水人口 RRI +0 / 代理 -47
+  sim #25: ['田んぼダム・中流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 0.5, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 745 億円
+  田んぼダム・中流 100% 現在気候 paddy_effect=0.5: 被害 RRI -11.4 / 代理 -0.8 億円、浸水人口 RRI +0 / 代理 -24
+  sim #26: ['森林化・中流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 746 億円
+  森林化・中流 100% 現在気候 forest_effect=1.0: 被害 RRI -10.3 / 代理 -3.5 億円、浸水人口 RRI +0 / 代理 -52
+  sim #27: ['森林化・中流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 0.5, 'raise_effect': 1.0} -> 被害 727 億円
+  森林化・中流 100% 現在気候 forest_effect=0.5: 被害 RRI -29.1 / 代理 +1.4 億円、浸水人口 RRI +0 / 代理 -44
+  sim #28: ['田んぼダム・下流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 601 億円
+  田んぼダム・下流 100% 現在気候 paddy_effect=1.0: 被害 RRI -155.2 / 代理 -140.4 億円、浸水人口 RRI -169 / 代理 -337
+  sim #29: ['田んぼダム・下流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 0.5, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 683 億円
+  田んぼダム・下流 100% 現在気候 paddy_effect=0.5: 被害 RRI -73.0 / 代理 -78.6 億円、浸水人口 RRI -169 / 代理 -206
+  sim #30: ['森林化・下流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 736 億円
+  森林化・下流 100% 現在気候 forest_effect=1.0: 被害 RRI -20.8 / 代理 -6.5 億円、浸水人口 RRI +0 / 代理 -51
+  sim #31: ['森林化・下流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 0.5, 'raise_effect': 1.0} -> 被害 730 億円
+  森林化・下流 100% 現在気候 forest_effect=0.5: 被害 RRI -26.8 / 代理 -1.2 億円、浸水人口 RRI +0 / 代理 -31
+  sim #32: ['住宅対策・下流: 嵩上げ +1.0 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 745 億円
+  住宅対策・下流 嵩上げ +1.0 m 現在気候 raise_effect=1.0: 被害 RRI -11.0 / 代理 -6.4 億円、浸水人口 RRI +0 / 代理 -36
+  sim #33: ['住宅対策・下流: 嵩上げ +1.0 m'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 0.5} -> 被害 751 億円
+  住宅対策・下流 嵩上げ +1.0 m 現在気候 raise_effect=0.5: 被害 RRI -5.2 / 代理 -3.2 億円、浸水人口 RRI +0 / 代理 -19
+  sim #34: ['住宅対策・下流: 移転'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 727 億円
+  住宅対策・下流 移転 現在気候 係数なし=1.0: 被害 RRI -29.8 / 代理 -35.0 億円、浸水人口 RRI -1024 / 代理 -1428
+  sim #35: ['排水ポンプ（下水道）・上流: +10 mm/h'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 717 億円
+  排水ポンプ（下水道）・上流 +10 mm/h 現在気候 係数なし=1.0: 被害 RRI -39.6 / 代理 -20.1 億円、浸水人口 RRI +0 / 代理 -36
+  sim #36: ['排水機場（農業）・上流: +3 mm/h'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 735 億円
+  排水機場（農業）・上流 +3 mm/h 現在気候 係数なし=1.0: 被害 RRI -21.6 / 代理 -2.8 億円、浸水人口 RRI -875 / 代理 -358
+  sim #37: ['雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 694 億円
+  雨水貯留（公共）・上流 30 mm 現在気候 係数なし=1.0: 被害 RRI -62.8 / 代理 -34.1 億円、浸水人口 RRI +0 / 代理 +27
+  sim #38: ['雨水貯留（各戸）・上流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 738 億円
+  雨水貯留（各戸）・上流 100% 現在気候 係数なし=1.0: 被害 RRI -18.5 / 代理 -7.6 億円、浸水人口 RRI +0 / 代理 +123
+  sim #39: ['排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 706 億円
+  排水ポンプ（下水道）・下流 +10 mm/h 現在気候 係数なし=1.0: 被害 RRI -50.2 / 代理 -45.3 億円、浸水人口 RRI +0 / 代理 -528
+  sim #40: ['排水機場（農業）・下流: +3 mm/h'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 702 億円
+  排水機場（農業）・下流 +3 mm/h 現在気候 係数なし=1.0: 被害 RRI -54.4 / 代理 -34.0 億円、浸水人口 RRI +0 / 代理 -62
+  sim #41: ['雨水貯留（公共）・下流: 30 mm'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 732 億円
+  雨水貯留（公共）・下流 30 mm 現在気候 係数なし=1.0: 被害 RRI -24.6 / 代理 -16.5 億円、浸水人口 RRI +0 / 代理 -46
+  sim #42: ['雨水貯留（各戸）・下流: 100%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 1.0, 'retention_effect': 1.0, 'paddy_effect': 1.0, 'forest_effect': 1.0, 'raise_effect': 1.0} -> 被害 738 億円
+  雨水貯留（各戸）・下流 100% 現在気候 係数なし=1.0: 被害 RRI -18.6 / 代理 -8.2 億円、浸水人口 RRI +0 / 代理 -11
+保存: /Users/nakashima/rri-python/data/processed/roadmap/_physics/abukuma_explore_v4/verify_measures.json

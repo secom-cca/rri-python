@@ -113,6 +113,7 @@ class RRIEvaluator:
         if key in self.cache and (not strict or all(k in self.cache[key] for k in REQUIRED)):
             return self.cache[key]
         eds = CA.edits(self.variables, x, sim)
+        self.log(f"  start sim: x={xkey(x)} sim={sim}")
         res = self.s.run(self.event, eds, {**gparams_for(sim), **self.gextra})
         self.n_sim += 1
         dmg = np.frombuffer(base64.b64decode(res["damage"]), "<f4").reshape(self.s.d.shape)

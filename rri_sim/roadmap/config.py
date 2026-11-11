@@ -15,7 +15,7 @@ DEFAULT = {
     "name": "abukuma_roadmap",
     "seed": 1,
     # physical layer: RRI-trained surrogate of an exploration run (docs/12) and its cost table (prepared once)
-    "physics": {"explore_run": "abukuma_explore_v2"},
+    "physics": {"explore_run": "abukuma_explore_v4"},
     "years": {"start": 2020, "end": 2100, "decision_step": 10, "eval_step": 5},
     "discount_rate": 0.04,
     "representative_event": {"annual_probability": 0.01, "status": "仮定",
@@ -40,11 +40,14 @@ DEFAULT = {
                       "change_cost_fraction": 0.0, "maintenance_fraction": 0.0, "fail_prob": 0.15, "reversible": True,
                       "stakeholders": ["自治体", "農家"], "status": "仮定",
                       "basis": "協議1年＋普及4〜19年＝5〜20年（初期仮定）。実施率は参加率（social）で頭打ち"},
-        "forest": {"tier": "地域", "measure_no": "#15", "implementer": "国・都道府県・市町村・森林所有者", "label": "森林化", "levels": [0.0, 0.5, 1.0], "consensus": 2.0, "build": 5.0, "diffuse": 0.0,
-                   "mature": {"nominal": 30.0, "low": 20.0, "high": 40.0},
-                   "change_cost_fraction": 0.0, "maintenance_fraction": 0.0, "fail_prob": 0.25, "reversible": False,
-                   "stakeholders": ["自治体", "農家", "森林所有者"], "status": "仮定",
-                   "basis": "植栽5年、成熟20〜40年で効果が最大（初期仮定）。農地の転換は戻さない（不可逆）"},
+        # 森林整備（森林管理）: 既存の山地の森林の物理パラメータを変える（1K-RRI の山地部分; 有効間隙率 γ_a, γ_m を
+        # gui.engine.FOREST_MGMT_DA_GAIN だけ増やす。土層厚は変えない）。森林化（農地の植林）は 1K-RRI では扱わない
+        "forest_mgmt": {"tier": "地域", "measure_no": "#15", "implementer": "国・都道府県・市町村・森林所有者", "label": "森林整備",
+                        "levels": [0.0, 0.5, 1.0], "consensus": 2.0, "build": 0.0,
+                        "diffuse": {"nominal": 10.0, "low": 5.0, "high": 20.0}, "mature": 0.0,
+                        "change_cost_fraction": 0.0, "maintenance_fraction": 0.0, "fail_prob": 0.1, "reversible": False,
+                        "stakeholders": ["自治体", "森林所有者"], "status": "仮定",
+                        "basis": "間伐・下層植生の回復を 5〜20 年で対象森林に広げる（実施率は線形に増加, 仮定）"},
         "raise": {"tier": "自治体", "measure_no": "#19", "implementer": "市町村・都道府県（助成）", "label": "住宅嵩上げ", "consensus": 2.0, "build": 0.0,
                   "diffuse": {"nominal": 6.0, "low": 3.0, "high": 18.0}, "mature": 0.0,
                   "change_cost_fraction": 0.5, "maintenance_fraction": 0.0, "fail_prob": 0.1, "reversible": False,
@@ -59,7 +62,7 @@ DEFAULT = {
         "pump_urban": {"tier": "自治体", "label": "排水ポンプ（下水道）", "consensus": 2.0, "build": {"nominal": 7.0, "low": 4.0, "high": 12.0},
                        "diffuse": 0.0, "mature": 0.0, "change_cost_fraction": 0.0, "maintenance_fraction": 0.0, "fail_prob": 0.05,
                        "reversible": False, "stakeholders": ["自治体"], "measure_no": "#5", "implementer": "下水道管理者（市町村）",
-                       "status": "仮定", "basis": "下水道の排水ポンプ場の増強。計画・施工 4〜12 年（仮定）"},
+                       "status": "仮定", "basis": "下水道の排水ポンプ場の増強。計画・施工 4〜12 年、施工期間中に効果が線形に増える（仮定）"},
         "pump_agri": {"tier": "自治体", "label": "排水機場（農業）", "consensus": 2.0, "build": {"nominal": 7.0, "low": 4.0, "high": 12.0},
                       "diffuse": 0.0, "mature": 0.0, "change_cost_fraction": 0.0, "maintenance_fraction": 0.0, "fail_prob": 0.1,
                       "reversible": False, "stakeholders": ["国", "自治体", "農家"], "measure_no": "#6",
@@ -105,7 +108,7 @@ DEFAULT = {
     # 下水道管理者・土地改良事業), 地域 (農業者・森林所有者・民間事業者・住民). A scope = the tiers taking part.
     "scopes": {"国のみ": ["国"], "国＋自治体": ["国", "自治体"], "国＋自治体＋地域（住民・農家・民間）": ["国", "自治体", "地域"]},
     # measure groups (complementarity, continuation library)
-    "portfolio_groups": {"paddy_dam": ["paddy_dam"], "forest": ["forest"], "housing": ["relocate"], "retention": ["retention"],
+    "portfolio_groups": {"paddy_dam": ["paddy_dam"], "forest_mgmt": ["forest_mgmt"], "housing": ["relocate"], "retention": ["retention"],
                          "levee": ["levee"], "pump": ["pump_urban", "pump_agri"], "storage": ["storage_public", "storage_private"],
                          "landuse": ["zoning", "induce"], "floodproof": ["floodproof"], "evacuation": ["evacuation"]},
     # housing variables (住宅対策): option 1 = raise, 2 = relocate; staged = raise first, relocate later
@@ -116,7 +119,7 @@ DEFAULT = {
             "国": {"coord_cost_oku_yr": 0.3, "role": "河川管理者・事業費"},
             "自治体": {"coord_cost_oku_yr": 0.5, "role": "土地利用・住宅対策・協議の場"},
             "農家": {"coord_cost_oku_yr": 0.3, "role": "田んぼダム・遊水地用地・農地転換"},
-            "森林所有者": {"coord_cost_oku_yr": 0.2, "role": "森林化・森林管理"},
+            "森林所有者": {"coord_cost_oku_yr": 0.2, "role": "森林整備"},
             "住民": {"coord_cost_oku_yr": 0.4, "role": "嵩上げ・移転・堤防用地・各戸貯留・避難"},
             "民間事業者": {"coord_cost_oku_yr": 0.2, "role": "各戸貯留・耐水化・土地利用規制"},
         },
@@ -127,7 +130,7 @@ DEFAULT = {
         "consensus_reduction": {"nominal": 0.5, "low": 0.2, "high": 0.8},            # consensus x (1 - a e)
         "fail_scale": {"nominal": 1.0, "low": 0.5, "high": 2.0},                    # x measures.fail_prob
         "fail_engagement_reduction": 0.7,                                            # p x (1 - b e)
-        "adoption": {"paddy_dam": [0.3, 0.9], "forest": [0.3, 0.8], "raise": [0.5, 0.95], "relocate": [0.4, 0.9],
+        "adoption": {"paddy_dam": [0.3, 0.9], "forest_mgmt": [0.3, 0.8], "raise": [0.5, 0.95], "relocate": [0.4, 0.9],
                      "storage_private": [0.1, 0.6], "floodproof": [0.2, 0.7], "evacuation": [0.4, 0.9]},
         "adoption_shift": {"nominal": 0.0, "low": -0.15, "high": 0.15},
         "coord_cost_scale": {"nominal": 1.0, "low": 0.5, "high": 2.0},
@@ -143,28 +146,24 @@ DEFAULT = {
         "rain_2100": {"nominal": 1.10, "low": 1.0, "high": 1.3, "status": "根拠",
                       "basis": "2℃ 1.1・4℃ 1.2（国交省提言）、上限 1.3 は予測幅を見込んだ仮定（代理モデルの学習範囲）"},
         "slr_2100": {"nominal": 0.38, "low": 0.2, "high": 0.7, "status": "根拠", "basis": "日本の気候変動2020 領域I 2℃ 0.38・4℃ 0.70 m"},
-        "shift_year": {"nominal": 2050, "low": 2030, "high": 2070, "status": "仮定",
-                       "basis": "その年まで想定（2℃）経路、以後 2100年値へ直線（気候の『想定外』の時期）"},
         "rain_gamma": {"nominal": 1.0, "low": 0.9, "high": 1.2, "status": "仮定", "basis": "降雨強度の強調（docs/10）"},
+        # true path of a world: 1 + (X - 1) g(t) for the rain factor, X g(t) for the sea level (X = the world's 2100 value);
+        # the shape g (0 in 2020, path_2050 in 2050, 1 in 2100, linear in between) is the same in every world
+        "path_2050": {"rain": 0.6, "slr": 0.39, "status": "仮定",
+                      "basis": "2050年に2100年までの変化の 60%（降雨）・39%（海面）。docs/11 の 2℃ 経路の形"},
+        # forecast of the 2100 values (learning, world.Forecast): Gaussian prior N(belief, sigma0^2), sigma0 = (high - low) / sqrt(12)
+        # of the factor range; information arrives continuously, dY = X dt + kappa^-1/2 dW, so the forecast (posterior mean)
+        # m_t = (mu0 / s0^2 + kappa Y_t) / (1 / s0^2 + kappa (t - t0)) and its s.d. s_t = (1 / s0^2 + kappa (t - t0))^-1/2.
+        # kappa from the year by which s_t has halved (half_year: 1 + kappa s0^2 (half_year - t0) = 4).  The decisions see
+        # only (m_t, s_t); the physics sees the true path
+        "forecast": {"half_year": {"nominal": 2060, "low": 2040, "high": 2090}, "status": "仮定",
+                     "basis": "予測の標準偏差が半分になる年。観測・予測の蓄積で不確実性が縮む速さ（学習）。値は仮定"},
     },
     "landuse": {
         "asset_2100": {"nominal": 1.0, "low": 0.8, "high": 1.3, "status": "仮定",
                        "basis": "浸水域の資産（被害額）係数。低地の開発で増加・撤退で減少"},
         "pop_2100": {"nominal": 0.8, "low": 0.6, "high": 1.05, "status": "仮定",
                      "basis": "浸水域の人口係数。計画時の想定は人口減少 0.8（仮定）"},
-        "shift_year": {"nominal": 2050, "low": 2030, "high": 2080, "status": "仮定", "basis": "資産の変化が始まる年"},
-    },
-    # measure effects (RRI effect coefficients, docs/10): planner's belief = nominal; technology changes
-    # the NbS / operation effects (tech_types) by tech_gain over 10 years from tech_year
-    "effects": {
-        "levee": {"nominal": 0.9, "low": 0.5, "high": 1.0}, "retention": {"nominal": 0.85, "low": 0.5, "high": 1.0},
-        "paddy_dam": {"nominal": 0.6, "low": 0.3, "high": 1.0}, "forest": {"nominal": 0.6, "low": 0.3, "high": 1.0},
-        "raise": {"nominal": 0.8, "low": 0.5, "high": 1.0},
-        "tech_types": ["paddy_dam", "forest", "retention"],
-        "tech_gain": {"nominal": 0.0, "low": -0.2, "high": 0.3, "status": "仮定",
-                      "basis": "技術進歩（自動調整板・森林管理・遊水地の運用）で +、劣化・堆砂で −"},
-        "tech_year": {"nominal": 2050, "low": 2030, "high": 2080},
-        "status": "仮定", "basis": "効果係数の幅は docs/10 の感度分析の範囲（代理モデルの学習範囲）",
     },
     # ---- evaluation criteria (regimes): weights of normalised terms and tolerated ratios (ATP thresholds)
     "regimes": {
@@ -180,9 +179,9 @@ DEFAULT = {
                       "basis": "評価基準（重み・許容閾値）がその年に別のレジームへ変わる。確率 p_none で変わらない"},
     "threshold_penalty": 0.3,         # utility penalty x share of periods above a tolerated ratio
     # ---- monitoring and detection (P1 triggers, P2/P3 updates)
-    "monitoring": {"risk_noise": 0.05, "rain_noise": 0.015, "slr_noise": 0.02, "effect_noise": 0.06, "exposure_noise": 0.02,
-                   "regime_lag_years": 5, "status": "仮定", "basis": "観測の誤差（相対・絶対）と、評価基準の変化が政策に反映されるまでの遅れ"},
-    "detect": {"rain_tol": 0.025, "slr_tol": 0.06, "effect_tol": 0.12, "exposure_tol": 0.08, "delay_tol": 0.3, "trend_window": 3},
+    # no observation error (the uncertainty of the information is the forecast's, climate.forecast)
+    "monitoring": {"regime_lag_years": 5, "status": "仮定", "basis": "評価基準の変化が政策に反映されるまでの遅れ"},
+    "detect": {"rain_tol": 0.025, "slr_tol": 0.06, "exposure_tol": 0.08, "delay_tol": 0.3, "trend_window": 3},
     "trigger": {"ratio_of_threshold": 0.9, "anticipate": True},
     # ---- policies compared
     "policies": {
@@ -194,7 +193,7 @@ DEFAULT = {
     "replan": {"max": 4},
     # roadmap optimisation (GA on the surrogate, from the inherited state)
     "optimiser": {"pop": 24, "gens": 12, "p_mut": 0.15, "n_belief": 3,
-                  "belief_spread": {"rain_2100": 0.05, "effect": 0.1, "delay": 0.25}},
+                  "belief_spread": {"rain_2100": 0.05, "delay": 0.25}},
     # ---- experiments
     "experiment": {
         "n_worlds": 64, "oracle": True, "regret_threshold": 0.05,

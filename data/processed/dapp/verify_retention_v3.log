@@ -1,0 +1,81 @@
+遊水地の変数: 遊水地・上流（水準 [0, 1]）
+[準備] 流域モデルを読み込み中
+[準備] 表示データを準備中
+対策なし（現在気候）を計算中
+  sim #1: ['施策なし'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 756 億円
+  初期行動 #0 遊水地 なし 現在気候: RRI 756.4 / 代理 727.7 億円
+  sim #2: ['施策なし'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 946 億円
+  初期行動 #0 遊水地 なし 2℃: RRI 945.9 / 代理 976.4 億円
+  sim #3: ['施策なし'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 1341 億円
+  初期行動 #0 遊水地 なし 4℃: RRI 1341.0 / 代理 1347.0 億円
+  sim #4: ['遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 728 億円
+  初期行動 #0 遊水地 あり 現在気候: RRI 728.1 / 代理 717.5 億円
+  sim #5: ['遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 949 億円
+  初期行動 #0 遊水地 あり 2℃: RRI 948.8 / 代理 962.1 億円
+  sim #6: ['遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 1318 億円
+  初期行動 #0 遊水地 あり 4℃: RRI 1318.2 / 代理 1328.7 億円
+  sim #7: ['堤防・中流: +2 m', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '森林化・中流: 50%', '田んぼダム・下流: 50%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 557 億円
+  初期行動 #1 遊水地 なし 現在気候: RRI 556.8 / 代理 593.0 億円
+  sim #8: ['堤防・中流: +2 m', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '森林化・中流: 50%', '田んぼダム・下流: 50%'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 790 億円
+  初期行動 #1 遊水地 なし 2℃: RRI 789.9 / 代理 814.1 億円
+  sim #9: ['堤防・中流: +2 m', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '森林化・中流: 50%', '田んぼダム・下流: 50%'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 1169 億円
+  初期行動 #1 遊水地 なし 4℃: RRI 1169.2 / 代理 1178.7 億円
+  sim #10: ['堤防・中流: +2 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '森林化・中流: 50%', '田んぼダム・下流: 50%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 555 億円
+  初期行動 #1 遊水地 あり 現在気候: RRI 555.4 / 代理 585.4 億円
+  sim #11: ['堤防・中流: +2 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '森林化・中流: 50%', '田んぼダム・下流: 50%'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 778 億円
+  初期行動 #1 遊水地 あり 2℃: RRI 777.7 / 代理 803.0 億円
+  sim #12: ['堤防・中流: +2 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '森林化・中流: 50%', '田んぼダム・下流: 50%'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 1158 億円
+  初期行動 #1 遊水地 あり 4℃: RRI 1157.6 / 代理 1163.6 億円
+  sim #13: ['堤防・下流: +1 m', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（各戸）・上流: 50%', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 458 億円
+  初期行動 #4 遊水地 なし 現在気候: RRI 457.7 / 代理 464.6 億円
+  sim #14: ['堤防・下流: +1 m', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（各戸）・上流: 50%', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 595 億円
+  初期行動 #4 遊水地 なし 2℃: RRI 594.6 / 代理 610.8 億円
+  sim #15: ['堤防・下流: +1 m', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（各戸）・上流: 50%', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 845 億円
+  初期行動 #4 遊水地 なし 4℃: RRI 844.5 / 代理 895.3 億円
+  sim #16: ['堤防・下流: +1 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（各戸）・上流: 50%', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 428 億円
+  初期行動 #4 遊水地 あり 現在気候: RRI 427.7 / 代理 458.0 億円
+  sim #17: ['堤防・下流: +1 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（各戸）・上流: 50%', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 598 億円
+  初期行動 #4 遊水地 あり 2℃: RRI 597.7 / 代理 601.5 億円
+  sim #18: ['堤防・下流: +1 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・下流: 100%', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（各戸）・上流: 50%', '排水ポンプ（下水道）・下流: +10 mm/h'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 821 億円
+  初期行動 #4 遊水地 あり 4℃: RRI 820.8 / 代理 882.2 億円
+  sim #19: ['堤防・下流: +1 m', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 452 億円
+  初期行動 #62 遊水地 なし 現在気候: RRI 452.3 / 代理 470.1 億円
+  sim #20: ['堤防・下流: +1 m', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 646 億円
+  初期行動 #62 遊水地 なし 2℃: RRI 646.5 / 代理 634.8 億円
+  sim #21: ['堤防・下流: +1 m', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 914 億円
+  初期行動 #62 遊水地 なし 4℃: RRI 913.7 / 代理 942.9 億円
+  sim #22: ['堤防・下流: +1 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 452 億円
+  初期行動 #62 遊水地 あり 現在気候: RRI 452.2 / 代理 463.7 億円
+  sim #23: ['堤防・下流: +1 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 623 億円
+  初期行動 #62 遊水地 あり 2℃: RRI 623.3 / 代理 625.5 億円
+  sim #24: ['堤防・下流: +1 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 嵩上げ +1.0 m', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 884 億円
+  初期行動 #62 遊水地 あり 4℃: RRI 883.7 / 代理 929.5 億円
+  sim #25: ['堤防・下流: +2 m', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm', '雨水貯留（各戸）・上流: 50%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 446 億円
+  初期行動 #92 遊水地 なし 現在気候: RRI 446.1 / 代理 459.6 億円
+  sim #26: ['堤防・下流: +2 m', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm', '雨水貯留（各戸）・上流: 50%'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 630 億円
+  初期行動 #92 遊水地 なし 2℃: RRI 629.7 / 代理 586.7 億円
+  sim #27: ['堤防・下流: +2 m', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm', '雨水貯留（各戸）・上流: 50%'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 843 億円
+  初期行動 #92 遊水地 なし 4℃: RRI 842.5 / 代理 847.5 億円
+  sim #28: ['堤防・下流: +2 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm', '雨水貯留（各戸）・上流: 50%'] | {'rain_factor': 1.0, 'sea_level_rise_m': 0.0, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 446 億円
+  初期行動 #92 遊水地 あり 現在気候: RRI 446.0 / 代理 452.9 億円
+  sim #29: ['堤防・下流: +2 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm', '雨水貯留（各戸）・上流: 50%'] | {'rain_factor': 1.1, 'sea_level_rise_m': 0.38, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 580 億円
+  初期行動 #92 遊水地 あり 2℃: RRI 580.1 / 代理 577.5 億円
+  sim #30: ['堤防・下流: +2 m', '遊水地・上流: 阿武隈川上流遊水地群（350 ha, 1500 万m³）', '田んぼダム・上流: 100%', '住宅対策・上流: 移転', '田んぼダム・中流: 50%', '田んぼダム・下流: 100%', '住宅対策・下流: 移転', '排水ポンプ（下水道）・上流: +10 mm/h', '雨水貯留（公共）・上流: 30 mm', '雨水貯留（各戸）・上流: 50%'] | {'rain_factor': 1.2, 'sea_level_rise_m': 0.54, 'rain_gamma': 1.0, 'levee_effect': 0.9, 'retention_effect': 0.85, 'paddy_effect': 0.6, 'forest_effect': 0.6, 'raise_effect': 0.8} -> 被害 818 億円
+  初期行動 #92 遊水地 あり 4℃: RRI 818.1 / 代理 834.6 億円
+遊水地の効果（あり − なし, 被害額 億円）: 初期行動・気候ごとに RRI / 代理
+  #0 現在気候: RRI -28.2 / 代理 -10.2（浸水人口 RRI +0 / 代理 -9）
+  #0 2℃: RRI +2.9 / 代理 -14.3（浸水人口 RRI +0 / 代理 -104）
+  #0 4℃: RRI -22.8 / 代理 -18.3（浸水人口 RRI +0 / 代理 -183）
+  #1 現在気候: RRI -1.5 / 代理 -7.6（浸水人口 RRI +0 / 代理 -6）
+  #1 2℃: RRI -12.3 / 代理 -11.1（浸水人口 RRI +0 / 代理 -59）
+  #1 4℃: RRI -11.5 / 代理 -15.2（浸水人口 RRI +0 / 代理 -133）
+  #4 現在気候: RRI -29.9 / 代理 -6.6（浸水人口 RRI +0 / 代理 -5）
+  #4 2℃: RRI +3.0 / 代理 -9.3（浸水人口 RRI +0 / 代理 -41）
+  #4 4℃: RRI -23.7 / 代理 -13.1（浸水人口 RRI +0 / 代理 -77）
+  #62 現在気候: RRI -0.1 / 代理 -6.4（浸水人口 RRI +0 / 代理 -1）
+  #62 2℃: RRI -23.1 / 代理 -9.4（浸水人口 RRI +0 / 代理 -27）
+  #62 4℃: RRI -30.0 / 代理 -13.4（浸水人口 RRI +0 / 代理 -65）
+  #92 現在気候: RRI -0.1 / 代理 -6.7（浸水人口 RRI +0 / 代理 -2）
+  #92 2℃: RRI -49.6 / 代理 -9.2（浸水人口 RRI +0 / 代理 -23）
+  #92 4℃: RRI -24.4 / 代理 -12.9（浸水人口 RRI +0 / 代理 -48）
+全状態: R² 0.990・相対 RMSE 3.4%、効果の平均 RRI -16.7 / 代理 -10.9 億円

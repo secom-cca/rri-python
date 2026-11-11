@@ -2,21 +2,22 @@
 
 A world is given by factors in the unit cube (FACTORS; ranges from the config):
 
-    climate   rain_2100, slr_2100, climate_shift_year, rain_gamma
-              (the planning path = 2C until the shift year, then linear to the 2100 values)
-    land use  asset_2100, pop_2100, landuse_shift_year    (exposure: assets / people in flood-prone areas)
-    effects   eff_<measure> (effect coefficient at the start), tech_gain, tech_year
-              (technology changes the effects of tech_types by tech_gain over 10 years)
-    delays    delay_<measure> (the uncertain phase: build / diffuse / mature)
+    climate   rain_2100, slr_2100 (the true 2100 values X; true path 1 + (X - 1) g(t) / X g(t) with a fixed shape g),
+              rain_gamma, forecast_half_year (learning speed of the forecast)
+    land use  asset_2100, pop_2100   (exposure in flood-prone areas, linear from the start year)
+    delays    delay_<measure> (the uncertain phase: build / diffuse)
     social    engagement_tau, consensus_reduction, fail_scale, adoption_shift, coord_cost_scale
     regime    regime_year, regime_kind (none with probability p_none, else another criteria regime)
 
-Random draws that are not factors (consensus failures, observation noise) come
-from the world seed, identical for every policy (common random numbers).
+The decisions see the forecast (Forecast: posterior mean and s.d. of the 2100 rain factor and sea-level rise at each time,
+improving as information accumulates), the physics sees the true path.  There is no observation error and no effect
+coefficient (measures act with their physical parameters).  Random draws that are not factors (consensus failures, the
+forecast's information path) come from the world seed, identical for every policy (common random numbers).
 """
 from __future__ import annotations
 
 import copy
+import math
 import zlib
 
 import numpy as np
@@ -24,12 +25,12 @@ import numpy as np
 from .config import uval
 
 DELAY_FACTOR = {"levee": "delay_levee", "retention": "delay_retention", "paddy_dam": "delay_paddy_dam",
-                "forest": "delay_forest", "raise": "delay_housing", "relocate": "delay_housing",
+                "forest_mgmt": "delay_forest_mgmt", "raise": "delay_housing", "relocate": "delay_housing",
                 "pump_urban": "delay_drainage", "pump_agri": "delay_drainage", "storage_public": "delay_drainage",
                 "storage_private": "delay_private", "floodproof": "delay_private",
                 "zoning": "delay_policy", "induce": "delay_policy", "evacuation": "delay_policy"}
 # factors given in years of one measure's phase; the others are positions (0-1) within each measure's own range
-YEAR_FACTORS = ("delay_levee", "delay_retention", "delay_paddy_dam", "delay_forest")
+YEAR_FACTORS = ("delay_levee", "delay_retention", "delay_paddy_dam", "delay_forest_mgmt")
 UNIT_FACTOR_LABEL = {"delay_housing": "住宅対策の実施期間", "delay_drainage": "排水ポンプ・公共貯留の施工期間",
                      "delay_private": "各戸貯留・耐水化の普及期間", "delay_policy": "土地利用規制・居住誘導・避難の浸透期間"}
 
@@ -37,32 +38,26 @@ UNIT_FACTOR_LABEL = {"delay_housing": "住宅対策の実施期間", "delay_drai
 def delay_phase(m):
     """The uncertain phase ({nominal, low, high}) of a measure."""
     return next(ph for ph in ("build", "diffuse", "mature") if isinstance(m.get(ph), dict))
-EFFECT_KINDS = ("levee", "retention", "paddy_dam", "forest", "raise")
-GROUPS = {"climate": "気候", "landuse": "土地利用", "effects": "施策効果", "delays": "時間遅れ", "social": "社会・参加", "regime": "評価基準"}
+GROUPS = {"climate": "気候", "landuse": "土地利用", "delays": "時間遅れ", "social": "社会・参加", "regime": "評価基準"}
 
 
 def factors(cfg):
     """{name: {low, high, nominal, label, group}} in a fixed order."""
-    C, L, E, P = cfg["climate"], cfg["landuse"], cfg["effects"], cfg["participation"]
+    C, L, P = cfg["climate"], cfg["landuse"], cfg["participation"]
     M = cfg["measures"]
 
     def f(spec, label, group, **kw):
         return {"low": float(spec["low"]), "high": float(spec["high"]), "nominal": float(spec["nominal"]),
                 "label": label, "group": group, **kw}
     out = {
-        "rain_2100": f(C["rain_2100"], "2100年の降雨倍率", "climate"),
-        "slr_2100": f(C["slr_2100"], "2100年の海面上昇 [m]", "climate"),
-        "climate_shift_year": f(C["shift_year"], "気候が想定から外れ始める年", "climate"),
+        "rain_2100": f(C["rain_2100"], "2100年の降雨倍率（真値）", "climate"),
+        "slr_2100": f(C["slr_2100"], "2100年の海面上昇 [m]（真値）", "climate"),
         "rain_gamma": f(C["rain_gamma"], "降雨強度の強調 γ", "climate"),
+        "forecast_half_year": f(C["forecast"]["half_year"], "予測の標準偏差が半分になる年（学習の速さ）", "climate"),
         "asset_2100": f(L["asset_2100"], "2100年の資産係数（浸水域）", "landuse"),
         "pop_2100": f(L["pop_2100"], "2100年の人口係数（浸水域）", "landuse"),
-        "landuse_shift_year": f(L["shift_year"], "資産変化の開始年", "landuse"),
     }
-    for k in EFFECT_KINDS:
-        out[f"eff_{k}"] = f(E[k], f"{M[k]['label']}の効果係数（開始時）", "effects")
-    out["tech_gain"] = f(E["tech_gain"], "技術変化による効果係数の増減", "effects")
-    out["tech_year"] = f(E["tech_year"], "技術変化の年", "effects")
-    for k in ("levee", "retention", "paddy_dam", "forest"):
+    for k in ("levee", "retention", "paddy_dam", "forest_mgmt"):
         if k in M:
             ph = delay_phase(M[k])
             out[DELAY_FACTOR[k]] = f(M[k][ph], f"{M[k]['label']}の{ {'build': '施工', 'diffuse': '普及', 'mature': '成熟'}[ph]}期間 [年]", "delays")
@@ -94,14 +89,22 @@ def values_from_unit(z, F):
     return {n: float(v["low"] + zi * (v["high"] - v["low"])) for (n, v), zi in zip(F.items(), z)}
 
 
-def planning_paths(cfg):
-    """Climate paths assumed at the start (2C shape of docs/11: 60 % of the rain change, 39 % of the
-    sea-level rise by 2050)."""
-    b = cfg["climate"]["belief"]
+def path_shape(cfg, var):
+    """[[year, g]]: share of the change to 2100 reached by each year (var "rain" / "slr")."""
     y0 = cfg["years"]["start"]
-    rain = [[y0, 1.0], [2050, 1.0 + 0.6 * (b["rain_2100"] - 1.0)], [2100, b["rain_2100"]]]
-    slr = [[y0, 0.0], [2050, 0.39 * b["slr_2100"]], [2100, b["slr_2100"]]]
-    return rain, slr
+    return [[y0, 0.0], [2050, float(cfg["climate"]["path_2050"][var])], [2100, 1.0]]
+
+
+def true_paths(cfg, rain_2100, slr_2100):
+    """(rain_pts, slr_pts) of a world with these 2100 values (the same shape in every world)."""
+    gr, gs = path_shape(cfg, "rain"), path_shape(cfg, "slr")
+    return [[y, 1.0 + (rain_2100 - 1.0) * g] for y, g in gr], [[y, slr_2100 * g] for y, g in gs]
+
+
+def planning_paths(cfg):
+    """Climate paths assumed at the start (the belief's 2100 values on the common shape)."""
+    b = cfg["climate"]["belief"]
+    return true_paths(cfg, b["rain_2100"], b["slr_2100"])
 
 
 def _interp(pts, t):
@@ -109,41 +112,75 @@ def _interp(pts, t):
     return float(np.interp(t, p[:, 0], p[:, 1]))
 
 
-def _shift_path(plan, year, v2100):
-    """The planning path until `year`, then a straight line to v2100."""
-    y = float(np.clip(year, plan[0][0], 2100))
-    pts = [q for q in plan if q[0] < y] + [[y, _interp(plan, y)]]
-    if y < 2100:
-        pts.append([2100.0, v2100])
-    return pts
+def forecast_prior(cfg):
+    """{var: (mu0, sigma0)} of the 2100 values: the belief and (high - low) / sqrt(12) of the factor range."""
+    C = cfg["climate"]
+    return {"rain": (float(C["belief"]["rain_2100"]), (C["rain_2100"]["high"] - C["rain_2100"]["low"]) / math.sqrt(12)),
+            "slr": (float(C["belief"]["slr_2100"]), (C["slr_2100"]["high"] - C["slr_2100"]["low"]) / math.sqrt(12))}
+
+
+def kappa_of(sigma0, half_year, y0):
+    """Information rate so that the forecast s.d. halves by half_year: 1 + kappa s0^2 (half_year - y0) = 4."""
+    return 3.0 / (sigma0 ** 2 * max(half_year - y0, 1e-6))
+
+
+class Forecast:
+    """Gaussian learning about the 2100 value X of one variable.  Prior N(mu0, s0^2); information dY = X dt + kappa^-1/2 dW
+    from y0 (the world's Brownian path W, yearly increments from its seed).  At time t:
+        precision  p_t = 1/s0^2 + kappa (t - y0),   s.d. s_t = p_t^-1/2
+        forecast   m_t = (mu0/s0^2 + kappa Y_t) / p_t,   Y_t = X (t - y0) + kappa^-1/2 W(t - y0)
+    m_t is a martingale (under the prior) and tends to X.  Seen from t, the forecast at t + h is
+    N(m_t, s_t^2 - s_{t+h}^2) (preposterior), and X is N(m_t, s_t^2).  truth None: the planner's view (no information path,
+    m_t = mu0)."""
+
+    def __init__(self, mu0, s0, kappa, y0, truth=None, seed=None, tag="rain"):
+        self.mu0, self.s0, self.kappa, self.y0, self.X = float(mu0), float(s0), float(kappa), float(y0), truth
+        if truth is not None:
+            rng = np.random.default_rng([int(seed), zlib.crc32(("forecast_" + tag).encode())])
+            self.W = np.concatenate([[0.0], np.cumsum(rng.normal(size=200))])     # yearly Brownian path
+
+    def sd(self, t):
+        return (1.0 / self.s0 ** 2 + self.kappa * max(t - self.y0, 0.0)) ** -0.5
+
+    def mean(self, t):
+        if self.X is None:
+            return self.mu0
+        tau = max(t - self.y0, 0.0)
+        k = int(np.floor(tau))
+        w = self.W[k] + (tau - k) * (self.W[min(k + 1, len(self.W) - 1)] - self.W[k])
+        Y = self.X * tau + w / math.sqrt(self.kappa)
+        return (self.mu0 / self.s0 ** 2 + self.kappa * Y) / (1.0 / self.s0 ** 2 + self.kappa * tau)
+
+    def spread_later(self, t, h):
+        """s.d. of the forecast that will be available at t + h, seen from t (preposterior)."""
+        return math.sqrt(max(self.sd(t) ** 2 - self.sd(t + h) ** 2, 0.0))
 
 
 class World:
-    """params: rain_pts, slr_pts, gamma, eff0 {kind}, tech_gain, tech_year, tech_types, asset_pts, pop_pts,
-    phases {kind: {consensus, build, diffuse, mature}}, social {tau, alpha, fail_scale, adoption_shift, coord_scale},
-    regimes [[year, name], ...], seed, deterministic (belief worlds: no noise, failure iff p > 0.5)."""
+    """params: rain_pts, slr_pts (true paths), rain_2100, slr_2100 (true values; None in the planner's belief), gamma,
+    forecast {half_year}, asset_pts, pop_pts, phases {kind: {consensus, build, diffuse, mature}}, social {tau, alpha,
+    fail_scale, adoption_shift, coord_scale}, regimes [[year, name], ...], seed, deterministic (belief worlds: failure iff
+    p > 0.5, no information path)."""
 
     def __init__(self, params, cfg):
         self.p = params
         self.cfg = cfg
-        self.ranges = {k: (cfg["effects"][k]["low"], cfg["effects"][k]["high"]) for k in EFFECT_KINDS}
+        y0 = cfg["years"]["start"]
+        pri = forecast_prior(cfg)
+        hy = float(params.get("forecast", {}).get("half_year", uval(cfg["climate"]["forecast"]["half_year"])))
+        det = params.get("deterministic")
+        self.fc = {v: Forecast(mu, s0, kappa_of(s0, hy, y0), y0, None if det else params.get(f"{v}_2100"),
+                               params.get("seed", 0), v) for v, (mu, s0) in pri.items()}
 
     def copy(self):
         return World(copy.deepcopy(self.p), self.cfg)
 
-    # ---- environment
+    # ---- environment (true)
     def rain(self, t):
         return _interp(self.p["rain_pts"], t)
 
     def slr(self, t):
         return _interp(self.p["slr_pts"], t)
-
-    def effect(self, kind, t):
-        k = "raise" if kind == "relocate" else kind
-        e = self.p["eff0"][k]
-        if k in self.p["tech_types"] and self.p["tech_gain"]:
-            e += self.p["tech_gain"] * float(np.clip((t - self.p["tech_year"]) / 10.0, 0.0, 1.0))
-        return float(np.clip(e, *self.ranges[k]))
 
     def asset(self, t):
         return _interp(self.p["asset_pts"], t)
@@ -152,8 +189,12 @@ class World:
         return _interp(self.p["pop_pts"], t)
 
     def env(self, t):
-        return {"rain_factor": self.rain(t), "sea_level_rise_m": self.slr(t), "rain_gamma": self.p["gamma"],
-                **{f"{'paddy' if k == 'paddy_dam' else k}_effect": self.effect(k, t) for k in EFFECT_KINDS}}
+        return {"rain_factor": self.rain(t), "sea_level_rise_m": self.slr(t), "rain_gamma": self.p["gamma"]}
+
+    # ---- forecast (what the decisions see)
+    def forecast(self, t):
+        """{rain: (mean, sd), slr: (mean, sd)} of the 2100 values available at time t."""
+        return {v: (f.mean(t), f.sd(t)) for v, f in self.fc.items()}
 
     def phases(self, kind):
         return self.p["phases"][kind]
@@ -171,11 +212,6 @@ class World:
             return 0.5
         return float(np.random.default_rng([self.p["seed"], zlib.crc32(kind.encode()), attempt]).random())
 
-    def noise(self, tag, t):
-        if self.p.get("deterministic"):
-            return 0.0
-        return float(np.random.default_rng([self.p["seed"], zlib.crc32(tag.encode()), int(round(t * 10))]).normal())
-
 
 def nominal_phases(cfg, kind, scale=1.0):
     m = cfg["measures"][kind]
@@ -186,11 +222,10 @@ def belief_params(cfg, delay_scale=1.0):
     """The planner's assumptions at the start year (nominal values, no surprises)."""
     rain, slr = planning_paths(cfg)
     y0 = cfg["years"]["start"]
-    P = cfg["participation"]
-    return {"rain_pts": rain, "slr_pts": slr, "gamma": uval(cfg["climate"]["rain_gamma"]),
-            "eff0": {k: uval(cfg["effects"][k]) for k in EFFECT_KINDS}, "tech_gain": 0.0,
-            "tech_year": uval(cfg["effects"]["tech_year"]), "tech_types": list(cfg["effects"]["tech_types"]),
-            "asset_pts": [[y0, 1.0], [2100, 1.0]], "pop_pts": [[y0, 1.0], [2100, uval(cfg["landuse"]["pop_2100"])]],
+    P, L = cfg["participation"], cfg["landuse"]
+    return {"rain_pts": rain, "slr_pts": slr, "rain_2100": None, "slr_2100": None, "gamma": uval(cfg["climate"]["rain_gamma"]),
+            "forecast": {"half_year": uval(cfg["climate"]["forecast"]["half_year"])},
+            "asset_pts": [[y0, 1.0], [2100, uval(L["asset_2100"])]], "pop_pts": [[y0, 1.0], [2100, uval(L["pop_2100"])]],
             "phases": {k: nominal_phases(cfg, k, delay_scale) for k in cfg["measures"]},
             "social": {"tau": uval(P["engagement_tau_years"]), "alpha": uval(P["consensus_reduction"]),
                        "fail_scale": uval(P["fail_scale"]), "adoption_shift": uval(P["adoption_shift"]),
@@ -200,7 +235,6 @@ def belief_params(cfg, delay_scale=1.0):
 
 def world_params(cfg, v, seed, delay_scale=1.0):
     """True world from factor values v (values_from_unit)."""
-    rain, slr = planning_paths(cfg)
     y0 = cfg["years"]["start"]
     M = cfg["measures"]
     F = factors(cfg)
@@ -215,7 +249,6 @@ def world_params(cfg, v, seed, delay_scale=1.0):
             s = M[k][main]
             ph[main] = (s["low"] + v[fac] * (s["high"] - s["low"])) * delay_scale
         phases[k] = ph
-    ly = v["landuse_shift_year"]
     cats = F["regime_kind"]["categories"]
     pn = cfg["regime_change"]["p_none"]
     rk = v["regime_kind"]
@@ -223,12 +256,10 @@ def world_params(cfg, v, seed, delay_scale=1.0):
     if rk >= pn and len(cats) > 1:
         idx = min(int((rk - pn) / max(1 - pn, 1e-9) * (len(cats) - 1)), len(cats) - 2)
         regimes.append([round(v["regime_year"]), cats[1 + idx]])
-    return {"rain_pts": _shift_path(rain, v["climate_shift_year"], v["rain_2100"]),
-            "slr_pts": _shift_path(slr, v["climate_shift_year"], v["slr_2100"]),
-            "gamma": v["rain_gamma"], "eff0": {k: v[f"eff_{k}"] for k in EFFECT_KINDS},
-            "tech_gain": v["tech_gain"], "tech_year": v["tech_year"], "tech_types": list(cfg["effects"]["tech_types"]),
-            "asset_pts": [[y0, 1.0], [max(y0, min(ly, 2099)), 1.0], [2100, v["asset_2100"]]],
-            "pop_pts": [[y0, 1.0], [2100, v["pop_2100"]]],
+    rain, slr = true_paths(cfg, v["rain_2100"], v["slr_2100"])
+    return {"rain_pts": rain, "slr_pts": slr, "rain_2100": v["rain_2100"], "slr_2100": v["slr_2100"],
+            "gamma": v["rain_gamma"], "forecast": {"half_year": v["forecast_half_year"]},
+            "asset_pts": [[y0, 1.0], [2100, v["asset_2100"]]], "pop_pts": [[y0, 1.0], [2100, v["pop_2100"]]],
             "phases": phases,
             "social": {"tau": v["engagement_tau"], "alpha": v["consensus_reduction"], "fail_scale": v["fail_scale"],
                        "adoption_shift": v["adoption_shift"], "coord_scale": v["coord_cost_scale"]},
@@ -251,13 +282,12 @@ def belief_ensemble(cfg, belief, n, rng_seed):
     out = [World(copy.deepcopy(belief), cfg)]
     if n <= 1:
         return out
-    U = lhs(n - 1, 3, np.random.default_rng(rng_seed)) * 2 - 1
+    U = lhs(n - 1, 2, np.random.default_rng(rng_seed)) * 2 - 1
     for u in U:
         p = copy.deepcopy(belief)
         d = u[0] * sp["rain_2100"]
         p["rain_pts"] = [[y, r + d * (y - p["rain_pts"][0][0]) / max(2100 - p["rain_pts"][0][0], 1)] for y, r in p["rain_pts"]]
-        p["eff0"] = {k: e + u[1] * sp["effect"] for k, e in p["eff0"].items()}
-        p["phases"] = {k: {ph: (x * (1 + u[2] * sp["delay"]) if ph != "consensus" else x) for ph, x in v.items()}
+        p["phases"] = {k: {ph: (x * (1 + u[1] * sp["delay"]) if ph != "consensus" else x) for ph, x in v.items()}
                        for k, v in p["phases"].items()}
         out.append(World(p, cfg))
     return out

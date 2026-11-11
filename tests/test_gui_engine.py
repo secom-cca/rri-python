@@ -217,7 +217,7 @@ def test_candidates_split_housing_and_forest_management_by_owner(session):
     depth = np.where(s.assets.households > 0, 1.5, 0.0)
     nat = np.zeros(d.shape, bool)
     nat[:, :10] = True                                                  # part of the hillside is national forest
-    cfg = CF.load({"zones": [["全域", None]]})
+    cfg = CF.load({"zones": [["全域", None]], "candidates": {"forest_mgmt": {"split_owner": True}}})
     V = CA.build(d, meta, s.hand, s.assets, cn, depth, cfg, national_forest=nat)
     by = {v.type: v for v in V}
     assert {"relocate", "raise", "forest_mgmt", "forest_mgmt_national"} <= set(by)

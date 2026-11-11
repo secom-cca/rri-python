@@ -187,8 +187,9 @@ class AdaptiveRecalcRequest(BaseModel):
     noise_damage: float | None = None
     noise_climate: float | None = None
     trend_window: int | None = None
-    rain_from_year: int | None = None
     forecast_noise: float | None = None
+    planning: dict | None = None   # planning climate range {range: low|medium|high|low_high|custom, rain_2100, slr_2100} (search)
+    ranges: list[str] = []         # planning_batch: these presets with the same targets / information quality
     mode: str = "fixed"      # fixed: re-evaluate the recommended rules; search: search the rules again
     size: str = "fast"
 
@@ -217,6 +218,33 @@ def dapp_adaptive_recalculate(req: AdaptiveRecalcRequest):
             _roadmap_phys[ex] = SurrogatePhysics(ex, log=lambda m: None)
         return AD.recalculate(cfg, _roadmap_phys[ex], progress)
     return {"job": engine._start(fn), "name": name}
+
+
+@app.post("/api/dapp/adaptive/planning_batch")
+def dapp_adaptive_planning_batch(req: AdaptiveRecalcRequest):
+    """One search per planning climate range (same targets / information quality), in a row (job; docs/11 11.11.6)."""
+    import json as _json
+    from ..dapp import adaptive as AD
+    from ..roadmap.physics import SurrogatePhysics
+    d = _dapp_dir(req.name)
+    if not (d / "config.json").exists():
+        raise HTTPException(404, f"no Adaptive DAPP run {req.name}")
+    base = _json.loads((d / "config.json").read_text(encoding="utf-8"))
+    try:
+        cfgs = [AD.gui_config(base, {**req.model_dump(), "planning": {"range": k}}, "search", req.size) for k in req.ranges or ["low", "medium", "high", "low_high"]]
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+    names = [c["adaptive"]["name"] for c in cfgs]
+    if all((AD.DAPP_DIR / n / "summary.json").exists() for n in names):
+        return {"job": None, "name": names[0], "names": names}
+
+    def fn(progress):
+        ex = cfgs[0]["robust"]["explore_run"]
+        if ex not in _roadmap_phys:
+            progress(0.0, "代理モデルを読み込み中")
+            _roadmap_phys[ex] = SurrogatePhysics(ex, log=lambda m: None)
+        return AD.recalculate_many(cfgs, _roadmap_phys[ex], progress)
+    return {"job": engine._start(fn), "name": names[0], "names": names}
 
 
 @app.get("/api/dapp/adaptive/summaries/{name}")

@@ -124,19 +124,45 @@
     <div class="hint">PRIM: その主体（または全主体）の目標を満たせないシナリオが集まる範囲（密度＝範囲内の該当割合、カバー＝該当シナリオのうち範囲内の割合）。</div></section>
   <section class="card wide" id="m-ver-card"><h2>代表的な状態の RRI による確認</h2><table id="m-ver" class="tbl"></table></section>
 </main>
+<main id="forecast" hidden>
+  <section class="card wide" id="f-summary"></section>
+  <section class="card wide"><h2>初期行動ごとの Pareto front（Coverage 最大・平均累積費用 最小） <span class="hint">（評価シナリオ。点クリックで初期行動とルールを選択）</span></h2>
+    <div style="height:380px"><canvas id="f-fronts"></canvas></div>
+    <div class="hint">各線＝1 つの初期行動から、84 のルール（ρ・先読み年数・1 期の行動数 k・待つ判断）を全探索して得た非劣な組合せ。推奨は 1 つに選ばない。</div></section>
+  <section class="card wide"><h2>初期行動 <span class="hint">（行クリックで選択。候補は計画者の標準値の世界での Pareto 集合から）</span></h2>
+    <div style="overflow-x:auto"><table id="f-init" class="tbl"></table></div>
+    <div class="hint">収束: HV 比＝seed ごとの front の hypervolume ÷ 全 seed の front を合わせたもの（評価シナリオで、最小）。重なり＝seed 間の front のルールの集合の Jaccard 係数（平均）。</div></section>
+  <section class="card wide"><h2>選択した初期行動の front のルール <span id="f-sel" class="hint"></span></h2>
+    <div style="overflow-x:auto"><table id="f-rules" class="tbl"></table></div></section>
+  <section class="card"><h2>Target を満たし続ける割合と累積費用 <span id="f-rsel" class="hint"></span></h2><div style="height:260px"><canvas id="f-time"></canvas></div></section>
+  <section class="card"><h2>行動の時期と施策 <span class="hint">（評価シナリオでの行動の回数、10 年ごと）</span></h2><div style="overflow-x:auto"><table id="f-acts" class="tbl"></table></div>
+    <div class="hint" id="f-acts-note"></div></section>
+  <section class="card"><h2>seed ごとの探索結果 <span class="hint">（探索シナリオ: 84 ルールすべて）</span></h2><div style="height:260px"><canvas id="f-seeds"></canvas></div></section>
+  <section class="card"><h2>初期行動の候補（標準値の世界） <span class="hint">（初期費用と年平均被害額の現在価値; 色＝候補に選んだもの）</span></h2><div style="height:260px"><canvas id="f-cands"></canvas></div></section>
+</main>
 <main id="adaptive" hidden>
-  <section class="card wide"><h2>感度分析: Target と Information Quality <span class="hint">（条件を変えて Recalculate → 表示がその結果に切り替わる。下の一覧と図で条件どうしを比べる）</span></h2>
-    <div style="display:grid;grid-template-columns:minmax(420px,5fr) 6fr;gap:14px;align-items:start">
+  <section class="card wide"><h2>Planning climate range × Target <span class="hint">（DAPP を設計・探索するときに考慮する気候の範囲と目標を変えて Recalculate → 表示がその結果に切り替わる。評価は共通の広い評価シナリオで行う）</span></h2>
+    <div style="display:grid;grid-template-columns:minmax(420px,5fr) 7fr;gap:14px;align-items:start">
       <div id="a-inputs"></div>
-      <div><div class="ctl">横軸 <select id="a-sens-x"></select> <span id="a-sens-x-x"></span></div><div id="a-sens"></div>
-        <div class="hint">一度に1変数: 横軸の変数以外の条件と評価シナリオ数が表示中の実行と同じ行だけを描く（色＝モード; ルール固定の行は元の実行のルールをそのまま使う）。● 適応ルール・○ 11.9 方式（全初期行動の平均 Coverage）、◆ 推奨初期行動の適応ルール。</div></div></div>
+      <div><div class="ctl">縦軸 <select id="a-cmp-m"></select> <select id="a-cmp-size"></select> <span id="a-cmp-fig-x"></span></div><div id="a-cmp-fig"></div>
+        <div class="hint">横軸＝planning range、色＝Target。各点は、その条件で再探索した DAPP の推奨初期行動（数字）と推奨ルールを、共通の評価シナリオで評価した値。Coverage では ▲＝planning range 内の評価シナリオ、▽＝範囲外。
+          情報の質（観測ノイズ等）と探索の規模が表示中の実行と同じ再探索だけを比べる。点をクリックで表示を切り替え。</div></div></div>
+    <h2 style="margin-top:10px">Planning climate range × Target による DAPP の違い <span class="hint">（行クリックで表示を切り替え）</span> <span id="a-cmp-x"></span></h2>
+    <div style="overflow-x:auto"><table id="a-cmp" class="tbl"></table></div>
+    <div class="hint">推奨初期行動とルールは planning range の探索シナリオだけで選ぶ（計画者の視点）。「計画時の想定」＝その探索シナリオ上の Coverage。範囲内／範囲外＝評価シナリオを 2100年の降雨倍率・海面上昇で分けたもの（厳しい＝どちらかが範囲の上限を超える）。
+      Lock-in: 経路＝2050年に不可逆な土地利用・土地利用の競合・不可逆な施策で失われた選択肢の割合（11.9.5）、初期施策＝11.9 の評価。「事後に最良」＝同じルールで評価シナリオを使って初期行動を選んだ場合（比較用）。</div></section>
+  <section class="card wide"><details><summary><b>すべての実行と一度に1変数の感度（Target・Information Quality; 11.11.5）</b></summary>
+    <div style="display:grid;grid-template-columns:minmax(380px,1fr) 1fr;gap:14px;align-items:start;margin-top:6px">
+      <div><div class="ctl">横軸 <select id="a-sens-x"></select> <span id="a-sens-x-x"></span></div><div id="a-sens"></div></div>
+      <div class="hint">一度に1変数: 横軸の変数以外の条件（planning range を含む）と評価シナリオ数が表示中の実行と同じ行だけを描く（色＝モード; ルール固定の行は元の実行のルールをそのまま使う）。● 適応ルール・○ 11.9 方式（全初期行動の平均 Coverage）、◆ 推奨初期行動の適応ルール。
+        「降雨は 2050年から」は planning range を導入する前（11.11）の実行で、降雨の傾向を 2050年以降だけ使った設定（廃止）。</div></div>
     <h2 style="margin-top:10px">条件と結果の一覧 <span class="hint">（行クリックで表示を切り替え）</span> <span id="a-hist-x"></span></h2>
-    <div style="overflow-x:auto"><table id="a-hist" class="tbl"></table></div></section>
+    <div style="overflow-x:auto"><table id="a-hist" class="tbl"></table></div></details></section>
   <section class="card wide" id="a-summary"></section>
   <section class="card wide"><h2>初期行動の比較（各初期行動の最良の適応ルール, 多目的 Pareto） <span id="a-table-x"></span></h2>
     <div style="overflow-x:auto"><table id="a-table" class="tbl"></table></div>
     <div class="hint">各初期行動（11.9 と同じ初期施策）について、その後の適応ルールを探索シナリオで NSGA-II により探索し、推奨ルールを評価シナリオ（11.9 と同じ）で評価した。
-      ★＝Pareto（Coverage・平均費用・最大 Regret・残る選択肢で非劣）、◎＝推奨（Pareto のうち最高 Coverage から許容幅内で最も安い）。右側は同じ初期施策からの 11.9 方式（Pareto 組合せ間の移行）の経路。
+      ★＝Pareto（Coverage・平均費用・最大 Regret・残る選択肢で非劣）、◎＝推奨（Pareto のうち最高 Coverage から許容幅内で最も安い）。planning range を指定した実行では ★◎ を planning range の探索シナリオ上で決め、☆＝評価シナリオで選んだ場合の推奨（事後の比較用）。右側は同じ初期施策からの 11.9 方式（Pareto 組合せ間の移行）の経路。
       Regret＝両方式・全初期行動のうち、そのシナリオの最良の効用との差。残る選択肢＝11.9.5 と同じ定義（経路網を使わない判定: 両方式で同じ）。Coverage は LHS の標本の割合で、発生確率ではない。</div></section>
   <section class="card"><h2>Coverage と残る将来の選択肢（適応ルール ● vs 11.9 ○） <span id="a-scatter-x"></span></h2><div id="a-scatter"></div>
     <div class="hint">線＝同じ初期行動の 11.9 方式 → 適応ルール。右上ほど頑健で、選んだ後も選択肢が残る。点をクリックで選択。</div></section>

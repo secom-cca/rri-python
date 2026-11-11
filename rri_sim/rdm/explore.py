@@ -390,6 +390,14 @@ def run(cfg, out_dir=None, evaluator=None, mapinfo=None, log=print):
     log(f"学習データ: LHS {de['n_train']} 点 + 対策なし {de['n_none']} 点")
     run_points(*design(de["n_train"]), "学習")
     run_points(*design(de["n_none"], zero_x=True), "対策なし")
+    if de.get("n_sparse"):                   # few measures (1-3) at a time: single-measure effects near "no measures"
+        Xs, Us = design(de["n_sparse"], zero_x=True)
+        for x in Xs:
+            for i in rng.choice(nV, size=int(rng.integers(1, 4)), replace=False):
+                v = sp.V[i]
+                x[i] = round(float(rng.uniform(0.5, 1.0)), 2) if v.continuous else int(rng.integers(1, len(v.options)))
+        log(f"学習データ: 少数の施策（1〜3個）{de['n_sparse']} 点")
+        run_points(Xs, Us, "少数の施策")
     keys = [k for k in rows_y[0] if all(k in y for y in rows_y)]     # cached runs of older versions lack sub-indicators
 
     def feats(xs, us):

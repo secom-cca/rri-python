@@ -79,11 +79,28 @@ def default_res(basin_key) -> float:
     return BASINS[basin_key]["cfg"].res
 
 
+# 1K-RRI (rri_sim.k1rri): at 1 km the basin is the 1K-RRI upscaling of its 250 m model (4 x 4 cells), not an RRI model on a
+# 1 km DEM.  K1_ENABLED = False restores the earlier 1 km RRI model (its caches are kept).
+K1_ENABLED = True
+K1_RES, K1_FINE_RES = 1000.0, 250.0
+K1_VERSION = 1
+# river routing of 1K-RRI: the paper uses the diffusive wave; its explicit stability limit (dt <= V_eq / |Q|) gives steps of a
+# few seconds in floods, so the local inertial form (Bates et al. 2010; same steady state, Manning friction) is used.  The
+# plain's Q_xy stays a diffusive wave (k1rri._plain_xy).  "diffusive" restores the paper's river scheme.
+K1_RIVER_SCHEME = "inertial"
+
+
+def uses_1k(basin_key, res=None) -> bool:
+    return (K1_ENABLED and res is not None and float(res) == K1_RES and default_res(basin_key) == K1_FINE_RES)
+
+
 def cache_key(basin_key, res=None) -> str:
     """Cache-file stem for a basin at a grid resolution (the registered default
     resolution keeps the bare basin key, so existing caches stay valid)."""
     if res is None or float(res) == default_res(basin_key):
         return basin_key
+    if uses_1k(basin_key, res):
+        return f"{basin_key}_1k{K1_VERSION}"
     return f"{basin_key}_{float(res):.0f}m"
 
 
@@ -109,15 +126,44 @@ def _domain_path(basin_key, sets, cfg):
     return CACHE / f"domain_{basin_key}_{cfg.res:.0f}_{cfg.river_threshold_km2}_{sig}.pkl"
 
 
+def _domain_path_1k(basin_key, sets, cfg):
+    fine = _domain_path(basin_key, sets, basin_config(basin_key, K1_FINE_RES, cfg.river_threshold_km2))
+    return fine.with_name(fine.stem.replace(f"_{K1_FINE_RES:.0f}_", f"_1k{K1_VERSION}_") + ".pkl")
+
+
 def domain_cached(basin_key, res=None) -> bool:
     """Whether the preset model of a basin at `res` is already built (cache file exists)."""
     p = PRESETS.get(basin_key, {"sets": [], "threshold": None})
-    return _domain_path(basin_key, p["sets"], basin_config(basin_key, res, p["threshold"])).exists()
+    cfg = basin_config(basin_key, res, p["threshold"])
+    return (_domain_path_1k if uses_1k(basin_key, res) else _domain_path)(basin_key, p["sets"], cfg).exists()
 
 
-def build(basin_key, sets=None, threshold=None, use_cache=False, res=None):
+def build_1k(basin_key, sets=None, threshold=None, use_cache=False):
+    """1K-RRI model of a basin: its 250 m model (built / cached as usual) upscaled 4 x 4 (rri_sim.k1rri)."""
+    from .k1rri import upscale
+    b = BASINS[basin_key]
+    cfg = basin_config(basin_key, K1_RES, threshold)
+    path = _domain_path_1k(basin_key, sets, cfg)
+    if use_cache and path.exists():
+        with open(path, "rb") as f:
+            d, meta = pickle.load(f)
+        d.params.numerics.scheme = K1_RIVER_SCHEME
+        return d, meta, b
+    fine, fmeta, _ = build(basin_key, sets, threshold, use_cache=True, res=K1_FINE_RES, _allow_1k=False)
+    d, meta = upscale(fine, fmeta, factor=int(round(K1_RES / K1_FINE_RES)), log=print)
+    d.params.numerics.scheme = K1_RIVER_SCHEME
+    if use_cache:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump((d, meta), f)
+    return d, meta, b
+
+
+def build(basin_key, sets=None, threshold=None, use_cache=False, res=None, _allow_1k=True):
     """Build a registered basin. Returns (domain, meta, basin_entry).
-    `res` [m] overrides the registered grid resolution (default 250 m)."""
+    `res` [m] overrides the registered grid resolution (default 250 m); 1000 m gives the 1K-RRI model (uses_1k)."""
+    if _allow_1k and uses_1k(basin_key, res):
+        return build_1k(basin_key, sets, threshold, use_cache)
     b = BASINS[basin_key]
     cfg = basin_config(basin_key, res, threshold)
     path = _domain_path(basin_key, sets, cfg)

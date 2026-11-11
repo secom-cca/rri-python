@@ -67,7 +67,7 @@ from ..basin import floodplain_inundation, lonlat_to_rc, upstream_mask
 from ..cases import BASINS, EVENTS
 from ..data import estat, facilities, landuse, mlit_water
 from ..events import collect_gauges, gridded_rainfall
-from ..solver import Simulation
+from ..k1rri import is_1k, make_simulation
 from ..workflow import (CACHE, FOREST_MGMT, FOREST_NEW, PADDY_DAM, PRESETS, boundary_conditions, build_preset, cache_key,
                         default_res, domain_cached,
                         drainage_arrays)
@@ -83,7 +83,7 @@ NEW_SITE_DENSITY = 40.0       # 人/ha; default density of new residential land 
 NEW_SITE_MAX_SLOPE = 0.08     # ground slope limit for new residential land
 RETENTION_Q_RATIO = 0.7       # default 越流開始流量 = 0.7 x baseline peak discharge at the inlet
 RETENTION_RELEASE_RATIO = 0.5 # the basin drains back (排水門) only while the river is below 0.5 x 越流開始流量
-RESOLUTIONS = {125.0: "詳細・低速", 250.0: "標準・校正済み", 500.0: "高速・比較向け", 1000.0: "概略・精度低"}
+RESOLUTIONS = {125.0: "詳細・低速", 250.0: "標準・校正済み", 500.0: "高速・比較向け", 1000.0: "1K-RRI（250 m モデルを集約）"}
 # bump when the asset / indicator-data derivation changes (v2: e-Stat meshes without
 # a cell centre are no longer dropped, +8% households at 250 m)
 ASSET_CACHE_VERSION = 2            # relocation destinations: built-up cells this high above drainage
@@ -122,7 +122,8 @@ class BasinSession:
             pickle.dump(self.assets, open(apath, "wb"))
         self._load_indicator_data(say)
         say(0.95, "表示データを準備中")
-        self.gs = D.ground_slope_from_dem(d.z, d.dx, d.dy)
+        # damage slope groups: 1K-RRI uses the mean plain slope of the cell (the plain holds the assets)
+        self.gs = np.where(d.mask, d.i_f, np.nan) if is_1k(d) else D.ground_slope_from_dem(d.z, d.dx, d.dy)
         self.hand = self.meta["hand"]
         spath = CACHE / f"subgrid_{self.ckey}_v{SUBGRID_VERSION}.pkl"
         if spath.exists():
@@ -252,7 +253,7 @@ class BasinSession:
         else:
             rain0, _ = gridded_rainfall(self.d, data, stations, T0)
             dams0, sbc0, _ = boundary_conditions(self.key, self.d, self.meta, T0, ev.end)
-            sim = Simulation(self.d, rain0, dams=dams0, stage_bc=sbc0,
+            sim = make_simulation(self.d, rain0, dams=dams0, stage_bc=sbc0,
                              drainage=drainage_arrays(self.key, self.d, self.meta))
             sim.run((Te - T0).total_seconds(), output_interval=6 * 3600,
                     progress=(lambda f: progress(0.05 + 0.4 * f, "洪水前の土壌水分・河川流量を計算中（スピンアップ, 初回のみ）"))
@@ -365,6 +366,8 @@ class BasinSession:
         is_riv = np.zeros(ny * nx, bool)
         is_riv[riv_flat] = True
         is_riv = is_riv.reshape(d.shape)
+        if is_1k(d):              # 1K-RRI: every cell holds a channel beside its mountain and plain parts
+            is_riv = np.zeros(d.shape, bool)
         ci = {n: k for k, n in enumerate(self.class_names)}
         pd_cls = d.params.land_classes[ci[PADDY_DAM]]
         store = float(gparams.get("paddy_store_m", 0.15))
@@ -409,6 +412,9 @@ class BasinSession:
         d.dam_factor = 1.0
         bspec = getattr(self, "b", None) or {}
         low = d.mask & (np.nan_to_num(self.hand, nan=1e9) <= (bspec.get("lowland_drainage") or {}).get("hand_max_m", 5.0))
+        k1 = is_1k(d)
+        hyd = d.lc_f if k1 else d.landclass          # 1K-RRI: measures on the plain act on the plain's land use
+        lc0 = d.landclass.copy()
         for ei, e in enumerate(edits):
             if e["type"] == "relocate_dest":
                 continue
@@ -419,6 +425,9 @@ class BasinSession:
             m = m.reshape(d.shape) & d.mask
             t = e["type"]
             q = {}
+            if t == "forest" and k1:
+                notes.append("森林化は 1K-RRI では扱わない（山地・平野の面積を変える施策のため）。森林整備（forest_mgmt）を使う")
+                continue
             if t == "forest":
                 sel = m & ~np.isin(d.landclass, [ci["water"], ci["forest"], ci[FOREST_NEW]])
                 farm = float((assets.paddy_area_m2[sel] + assets.field_area_m2[sel]).sum())
@@ -429,28 +438,34 @@ class BasinSession:
                 notes.append(f"森林化 {sel.sum()} セル ({sel.sum() * cell_area / 1e6:.2f} km²; "
                              f"n={fn_cls.n:.2f}, 土層厚 {fn_cls.soil_depth:.1f} m)")
             elif t == "forest_mgmt":
-                sel = m & (d.landclass == ci["forest"])
-                d.landclass[sel] = ci[FOREST_MGMT]
+                if k1:                                   # the mountain part of the cells (its class is forest)
+                    sel = m & (d.As > 0) & (d.lc_s == ci["forest"])
+                    d.lc_s[sel] = ci[FOREST_MGMT]
+                    d.landclass[sel & (d.landclass == ci["forest"])] = ci[FOREST_MGMT]
+                else:
+                    sel = m & (d.landclass == ci["forest"])
+                    d.landclass[sel] = ci[FOREST_MGMT]
                 owner = e.get("owner", "other")
-                q = {"area_m2": float(sel.sum() * cell_area), "owner": owner}
+                q = {"area_m2": float(d.As[sel].sum() if k1 else sel.sum() * cell_area), "owner": owner}
                 notes.append(f"森林整備（{'国有林' if owner == 'national' else '民有林等'}）{sel.sum()} セル"
                              f" ({sel.sum() * cell_area / 1e6:.2f} km²; 土壌貯留 d_a {fo_cls.d_a * 1000:.0f} → {fm_cls.d_a * 1000:.0f} mm)")
             elif t == "pump":
                 tgt = e.get("target", "urban")
                 cls = [ci["urban"]] if tgt == "urban" else [ci[c] for c in ("paddy", "field", PADDY_DAM, "green") if c in ci]
                 mmh = float(e.get("mmh", 20.0 if tgt == "urban" else 5.0))
-                sel = m & low & np.isin(d.landclass, cls)
+                sel = m & low & np.isin(hyd, cls)
                 d.drain_add[sel] += mmh / 1000 / 3600
-                q = {"capacity_m3s": float(sel.sum() * cell_area * mmh / 1000 / 3600), "target": tgt, "mmh": mmh}
+                a_sel = float(d.Af[sel].sum() if k1 else sel.sum() * cell_area)      # 1K-RRI: the plain drains
+                q = {"capacity_m3s": a_sel * mmh / 1000 / 3600, "target": tgt, "mmh": mmh}
                 notes.append(f"排水ポンプ増強（{'市街地' if tgt == 'urban' else '農地'}）低地 {sel.sum()} セル × {mmh:.0f} mm/h"
                              f" = {q['capacity_m3s']:.0f} m³/s")
             elif t == "storage":
                 dep = float(e.get("depth_mm", 30.0)) / 1000
                 rel = float(e.get("release_mmh", 2.0))
-                sel = m & (d.landclass == ci["urban"])
+                sel = m & (hyd == ci["urban"])
                 d.store_add[sel] += dep
                 d.store_leak[sel] = (rel / 1000 / 3600) / np.maximum(d.store_add[sel], 1e-3)
-                q = {"volume_m3": float(sel.sum() * cell_area * dep), "kind": e.get("kind", "public")}
+                q = {"volume_m3": float((d.Af[sel].sum() if k1 else sel.sum() * cell_area) * dep), "kind": e.get("kind", "public")}
                 notes.append(f"雨水貯留浸透（{'公共' if q['kind'] == 'public' else '各戸'}）市街地 {sel.sum()} セル × {dep * 1000:.0f} mm"
                              f" = {q['volume_m3'] / 1e6:.2f} 百万m³（放流 {rel:.1f} mm/h）")
             elif t == "prerelease":
@@ -459,8 +474,10 @@ class BasinSession:
                 q = {"n_dams": len(bspec.get("dams", {})), "fraction": f}
                 notes.append(f"ダムの事前放流: 洪水調節容量 × {1 + f:.2f}（{q['n_dams']} ダム）")
             elif t == "paddy_dam":
-                sel = m & (d.landclass == ci["paddy"])
-                d.landclass[sel] = ci[PADDY_DAM]
+                sel = m & (hyd == ci["paddy"])
+                hyd[sel] = ci[PADDY_DAM]
+                if k1:
+                    d.landclass[sel & (d.landclass == ci["paddy"])] = ci[PADDY_DAM]
                 q = {"area_m2": float(assets.paddy_area_m2[sel].sum())}
                 notes.append(f"田んぼダム {sel.sum()} セル（水田 {q['area_m2'] / 1e6:.2f} km²）, "
                              f"貯留 {store * 100:.0f} cm, 放流 {rel:.1f} mm/h")
@@ -509,7 +526,7 @@ class BasinSession:
                 dep = float(e.get("depth", 3.0))
                 ratio = float(e.get("q_ratio", RETENTION_Q_RATIO))
                 # site: painted land except built-up land (建物用地), channels and water
-                site = m & ~is_riv & ~np.isin(d.landclass, [ci["urban"], ci["water"]])
+                site = m & ~is_riv & ~np.isin(hyd if k1 else d.landclass, [ci["urban"], ci["water"]])
                 n_urban = int((m & (d.landclass == ci["urban"])).sum())
                 if not site.any():
                     notes.append(f"遊水地: 用地にできるセルがありません（建物用地 {n_urban} セルは対象外）")
@@ -530,7 +547,10 @@ class BasinSession:
                 if k_in < 0:
                     notes.append("遊水地: 約1 km 以内に河道がないため設置できません")
                     continue
-                capacity = float(site.sum() * cell_area * dep)
+                # a planned project (candidates retention.sites) states its area and volume; the cells only place it
+                area_site = float(e["area_m2"]) if e.get("area_m2") else float(site.sum() * cell_area)
+                capacity = float(e["volume_m3"]) if e.get("volume_m3") else float(area_site * dep)
+                dep = capacity / area_site
                 q_peak = float(baseline_qmax[k_in]) if baseline_qmax is not None else np.nan
                 series = (np.asarray(baseline_qseries)[:, k_in] if baseline_qseries is not None else None)
                 excess = (lambda qc: float(np.maximum(series - qc, 0.0).sum() * 3600.0)) if series is not None else None
@@ -555,13 +575,13 @@ class BasinSession:
                 storage |= site
                 retention.append({"dam": Dam(k=k_in, capacity=capacity, q_cut=q_cut, name=f"遊水地{len(retention) + 1}",
                                              release_q=RETENTION_RELEASE_RATIO * q_cut),
-                                  "site": site, "area_m2": float(site.sum() * cell_area)})
-                weir = float(np.sqrt(site.sum() * cell_area))           # 越流堤長 ~ one side of the site
-                q = {"area_m2": float(site.sum() * cell_area), "depth_m": dep, "weir_length_m": weir,
+                                  "site": site, "area_m2": area_site})
+                weir = float(np.sqrt(area_site))           # 越流堤長 ~ one side of the site
+                q = {"area_m2": area_site, "depth_m": dep, "weir_length_m": weir,
                      "households": mv["households"], "population": mv["population"], "capacity_m3": capacity, "q_cut": q_cut,
                      "flood_volume_over_qcut_m3": vol_over,
                      "inlet_area_km2": float(r.area_km2[k_in]), "excluded_urban_cells": n_urban}
-                msg = (f"遊水地 {site.sum()} セル（{q['area_m2'] / 1e6:.2f} km², 貯留深 {dep:.1f} m, 容量 {capacity / 1e6:.2f} 百万m³）"
+                msg = (f"遊水地 {site.sum()} セル（用地 {q['area_m2'] / 1e6:.2f} km², 平均貯留深 {dep:.1f} m, 容量 {capacity / 1e6:.2f} 百万m³）"
                        f": 集水面積 {r.area_km2[k_in]:.0f} km² の河道から、流量 {q_cut:.0f} m³/s（{how}）を超える分を"
                        f"越流堤から取り込み、河道の流量がその半分を下回ってから排水")
                 if np.isfinite(vol_over):
@@ -575,6 +595,9 @@ class BasinSession:
                     msg += f"。用地内の {mv['households']:.0f} 世帯は移転"
                 notes.append(msg)
             applied.append({"type": t, "q": q, "edit": ei})
+        if k1:      # land-use changes of relocation (vacated land, new residential land) and retention sites: on the plain
+            ch = d.mask & (d.landclass != lc0) & np.isin(d.landclass, [ci["urban"], ci["green"], ci["wetland"]])
+            d.lc_f[ch] = d.landclass[ch]
         return d, assets, pop, floor, notes, storage, applied, retention
 
     def estimate(self, event_key, edits, gparams=None):
@@ -653,7 +676,7 @@ class BasinSession:
         drain = drainage_arrays(self.key, d, self.meta, d.landclass, force=bool(d.drain_add.any()))
         if drain is not None and d.drain_add.any():
             drain = (drain[0] + d.drain_add, drain[1])
-        sim = Simulation(d, rain, dams=dams, stage_bc=CL.shift_stage(prep["stage_bc"], sc), drainage=drain)
+        sim = make_simulation(d, rain, dams=dams, stage_bc=CL.shift_stage(prep["stage_bc"], sc), drainage=drain)
         if d.store_add.any():              # 雨水貯留浸透: held like paddy-dam water, released slowly
             sim.sd = sim.sd + d.store_add
             sim.leak = np.where(d.store_add > 0, d.store_leak, sim.leak)

@@ -128,7 +128,7 @@ class Ctx:
         if actor.metric == "basin":
             return max(obs["damage_ratio"] / tg["damage_ratio"], obs["pop_ratio"] / tg["pop_ratio"])
         z = actor.metric
-        noise = self.rc["monitoring"]["risk_noise"] * st.world.noise("risk_" + z, t)
+        noise = 0.0                                   # no observation error (11.12)
         return st.periods[-1]["damage_zone"][z] / self.ref["dz:" + z] * (1 + noise) / tg["damage_ratio"]
 
     def project(self, rows, actors):
@@ -589,7 +589,7 @@ def signal_quality(ctx):
         h = []
         for t in SM.decision_years(ctx.rc)[1:]:
             tm = t - ctx.estep / 2
-            h.append((tm, w.rain(tm) + mon["rain_noise"] * w.noise("rain", t)))
+            h.append((tm, w.rain(tm)))
             tl, vl, sl = PL.DAPPController._trend(h, ctx.y0, 1.0, win)
             P.setdefault(t, []).append(vl + sl * (2100 - tl))
     return [{"year": t, "q10": float(np.quantile(v, 0.1)), "median": float(np.median(v)), "q90": float(np.quantile(v, 0.9)),
